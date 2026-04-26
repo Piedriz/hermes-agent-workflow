@@ -92,14 +92,32 @@ echo
 echo "──────────────────────────────────────────────────────────────────────"
 echo "  Your Claude session is live. Three ways to interact:"
 echo
-echo "  1. This terminal — you'll be attached in a moment."
-echo "  2. https://claude.ai/code  →  pick session '${SESS}'"
-echo "  3. iOS Claude app: Code tab  →  pick '${SESS}'"
-echo
-echo "  Detach the terminal with Ctrl-b then d (session keeps running)."
-echo "  After bootstrap finishes, the same session is reachable as"
-echo "  'claude-remote' from any new shell on this machine."
-echo "──────────────────────────────────────────────────────────────────────"
-echo
-sleep 1
-exec tmux attach -t "$SESS"
+if [[ -t 0 ]]; then
+  echo "  1. This terminal — you'll be attached in a moment."
+  echo "  2. https://claude.ai/code  →  pick session '${SESS}'"
+  echo "  3. iOS Claude app: Code tab  →  pick '${SESS}'"
+  echo
+  echo "  Detach the terminal with Ctrl-b then d (session keeps running)."
+  echo "  After bootstrap finishes, the same session is reachable as"
+  echo "  'claude-remote' from any new shell on this machine."
+  echo "──────────────────────────────────────────────────────────────────────"
+  echo
+  sleep 1
+  exec tmux attach -t "$SESS"
+else
+  # curl | bash has no TTY — tmux attach would fail with "not a
+  # terminal". The tmux session is alive regardless; the kickoff
+  # prompt was send-keys'd, decoupled from attach. Print the
+  # attach command and let the user run it.
+  echo "  1. From any terminal on this machine, attach with:"
+  echo
+  echo "       tmux attach -t ${SESS}"
+  echo
+  echo "  2. https://claude.ai/code  →  pick session '${SESS}'"
+  echo "  3. iOS Claude app: Code tab  →  pick '${SESS}'"
+  echo
+  echo "  (Detach the terminal with Ctrl-b then d. Session keeps running.)"
+  echo "  After bootstrap, the same session is reachable as 'claude-remote'."
+  echo "──────────────────────────────────────────────────────────────────────"
+  echo
+fi
