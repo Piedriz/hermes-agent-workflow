@@ -62,62 +62,70 @@ fi
 
 cd "${TARGET}"
 
-# Spawn a tmux + claude remote-control session — same shape the
-# `claude-remote` bash function will use after bootstrap installs it,
-# so this initial setup session is reachable from the same terminal
-# AND from claude.ai/code AND from the iOS Claude app from the start.
-# Using a canonical session name (claude-<hostname>) means the
-# bash function (when it lands later) detects the session as already
-# running and no-ops on first invocation.
-readonly HOST_NAME_DERIVED="${HOST_NAME:-$(hostname -s)}"
-readonly SESS="claude-${HOST_NAME_DERIVED}"
+# Spawn a tmux session running plain `claude` (NOT remote-control) for
+# the install. Reasoning:
+#
+#   - The user is at this machine's terminal during install — they
+#     don't need browser/iOS access for the 5-10 min bootstrap. They
+#     get that AFTER bootstrap, via the `claude-remote` bash function
+#     setup-remote-claude.sh installs.
+#
+#   - `claude remote-control` is a session SPAWNER, not a REPL. Its
+#     pane shows a "Choose spawn mode [1/2]" picker on first run and
+#     a key-binding listener after — neither accepts our kickoff
+#     prompt via tmux send-keys, so the auto-kickoff UX falls apart.
+#
+#   - Plain `claude "$KICKOFF"` is a real REPL with the kickoff
+#     baked in as the first turn. send-keys also works as a fallback
+#     if we want to send follow-ups.
+#
+# Session name is install-specific (`hermes-install`) rather than the
+# canonical `claude-<hostname>` that claude-remote uses, so when the
+# user runs claude-remote post-bootstrap it spawns fresh with full
+# remote-control — no confusion between "the install session" and
+# "my ongoing remote session".
+readonly SESS="hermes-install"
 
 readonly KICKOFF='Read claude-session-history.md and AGENTS.md end-to-end, then walk me through the first-run setup. Specifically: check whether I am on my own private fork (Step 1a), help me create one if not, and then run scripts/bootstrap.sh. Be proactive — do the work, do not ask me to confirm each individual step unless something is genuinely ambiguous.'
 
 if tmux has-session -t "$SESS" 2>/dev/null; then
   warn "tmux session '${SESS}' already exists — attaching to it (kickoff prompt skipped)"
-  exec tmux attach -t "$SESS"
+  if [[ -t 0 ]]; then exec tmux attach -t "$SESS"; fi
+  echo "  Attach with: tmux attach -t ${SESS}"
+  exit 0
 fi
 
-ok "spawning Claude remote-control session: ${SESS}"
+ok "spawning install Claude session in tmux: ${SESS}"
+# Plain `claude "$KICKOFF"` — Claude takes a positional [prompt] arg
+# that fires as the first turn while keeping the session interactive.
+# printf %q shell-escapes the kickoff string for the child-shell
+# command line so embedded quotes / backticks survive.
+KICKOFF_Q="$(printf %q "$KICKOFF")"
 tmux new-session -d -s "$SESS" -x 200 -y 50 \
-  "cd ${TARGET} && claude remote-control --name ${SESS}"
-
-# Wait for Claude to initialize before sending the kickoff. Mirrors
-# the 5s delay in the claude-remote bash function — empirically
-# enough for the REPL to be ready to accept input on a fresh nook.
-( sleep 5 && tmux send-keys -t "$SESS" "$KICKOFF" Enter ) &
+  "cd ${TARGET} && claude ${KICKOFF_Q}"
 
 echo
 echo "──────────────────────────────────────────────────────────────────────"
-echo "  Your Claude session is live. Three ways to interact:"
+echo "  Your install Claude session is live in tmux session '${SESS}'."
+echo "  The kickoff prompt has been queued; Claude will start working as"
+echo "  soon as you attach."
 echo
 if [[ -t 0 ]]; then
-  echo "  1. This terminal — you'll be attached in a moment."
-  echo "  2. https://claude.ai/code  →  pick session '${SESS}'"
-  echo "  3. iOS Claude app: Code tab  →  pick '${SESS}'"
-  echo
-  echo "  Detach the terminal with Ctrl-b then d (session keeps running)."
-  echo "  After bootstrap finishes, the same session is reachable as"
-  echo "  'claude-remote' from any new shell on this machine."
+  echo "  Attaching now. Detach with Ctrl-b then d (session keeps running)."
   echo "──────────────────────────────────────────────────────────────────────"
   echo
   sleep 1
   exec tmux attach -t "$SESS"
 else
-  # curl | bash has no TTY — tmux attach would fail with "not a
-  # terminal". The tmux session is alive regardless; the kickoff
-  # prompt was send-keys'd, decoupled from attach. Print the
-  # attach command and let the user run it.
-  echo "  1. From any terminal on this machine, attach with:"
+  # curl | bash has no TTY — tmux attach would fail. Session is alive;
+  # user attaches manually from their shell.
+  echo "  This shell has no TTY (curl-pipe mode). Attach manually:"
   echo
-  echo "       tmux attach -t ${SESS}"
+  echo "      tmux attach -t ${SESS}"
   echo
-  echo "  2. https://claude.ai/code  →  pick session '${SESS}'"
-  echo "  3. iOS Claude app: Code tab  →  pick '${SESS}'"
-  echo
-  echo "  (Detach the terminal with Ctrl-b then d. Session keeps running.)"
-  echo "  After bootstrap, the same session is reachable as 'claude-remote'."
+  echo "  Detach with Ctrl-b then d. After bootstrap finishes, the more"
+  echo "  full-featured 'claude-remote' command (browser/iOS access too)"
+  echo "  will be available from any new shell."
   echo "──────────────────────────────────────────────────────────────────────"
   echo
 fi
