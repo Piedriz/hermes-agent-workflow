@@ -30,6 +30,7 @@ die()  { printf '%s✗%s %s\n' "$c_r" "$c_0" "$*" >&2; exit 1; }
 # Prereqs.
 command -v git    >/dev/null || die "git not found on PATH. Install git, then retry."
 command -v claude >/dev/null || die "claude not found on PATH. Install Claude Code first: https://claude.com/claude-code"
+command -v tmux   >/dev/null || die "tmux not found on PATH. Install tmux (apt install tmux / brew install tmux), then retry."
 
 # Clone (or reuse existing checkout if it points at the right remote).
 if [[ -d "${TARGET}" ]]; then
@@ -46,13 +47,45 @@ else
 fi
 
 cd "${TARGET}"
-ok "opening Claude Code in ${TARGET}"
-echo
 
-# Seed an initial prompt so Claude proactively runs the AGENTS.md flow
-# rather than landing on a blank prompt waiting for the user to know
-# what to ask. claude takes a positional [prompt] arg that fires as
-# the first turn; the session stays interactive after.
+# Spawn a tmux + claude remote-control session — same shape the
+# `claude-remote` bash function will use after bootstrap installs it,
+# so this initial setup session is reachable from the same terminal
+# AND from claude.ai/code AND from the iOS Claude app from the start.
+# Using a canonical session name (claude-<hostname>) means the
+# bash function (when it lands later) detects the session as already
+# running and no-ops on first invocation.
+readonly HOST_NAME_DERIVED="${HOST_NAME:-$(hostname -s)}"
+readonly SESS="claude-${HOST_NAME_DERIVED}"
+
 readonly KICKOFF='Read claude-session-history.md and AGENTS.md end-to-end, then walk me through the first-run setup. Specifically: check whether I am on my own private fork (Step 1a), help me create one if not, and then run scripts/bootstrap.sh. Be proactive — do the work, do not ask me to confirm each individual step unless something is genuinely ambiguous.'
 
-exec claude --name "hermes-agent-workflow setup" "$KICKOFF"
+if tmux has-session -t "$SESS" 2>/dev/null; then
+  warn "tmux session '${SESS}' already exists — attaching to it (kickoff prompt skipped)"
+  exec tmux attach -t "$SESS"
+fi
+
+ok "spawning Claude remote-control session: ${SESS}"
+tmux new-session -d -s "$SESS" -x 200 -y 50 \
+  "cd ${TARGET} && claude remote-control --name ${SESS}"
+
+# Wait for Claude to initialize before sending the kickoff. Mirrors
+# the 5s delay in the claude-remote bash function — empirically
+# enough for the REPL to be ready to accept input on a fresh nook.
+( sleep 5 && tmux send-keys -t "$SESS" "$KICKOFF" Enter ) &
+
+echo
+echo "──────────────────────────────────────────────────────────────────────"
+echo "  Your Claude session is live. Three ways to interact:"
+echo
+echo "  1. This terminal — you'll be attached in a moment."
+echo "  2. https://claude.ai/code  →  pick session '${SESS}'"
+echo "  3. iOS Claude app: Code tab  →  pick '${SESS}'"
+echo
+echo "  Detach the terminal with Ctrl-b then d (session keeps running)."
+echo "  After bootstrap finishes, the same session is reachable as"
+echo "  'claude-remote' from any new shell on this machine."
+echo "──────────────────────────────────────────────────────────────────────"
+echo
+sleep 1
+exec tmux attach -t "$SESS"
