@@ -110,6 +110,20 @@ claude-remote() {
   fi
   tmux new-session -d -s "\$sess" -x 200 -y 50 \\
     "cd ~ && claude remote-control --name \$sess"
+  # claude remote-control sometimes exits immediately (auth failure,
+  # account doesn't have the feature, version mismatch) — that kills
+  # the only window in the new session, which kills the session, which
+  # tears down the tmux server, which makes the deferred send-keys
+  # below print 'no server running'. Wait briefly and re-check; if the
+  # session is gone, surface an actionable error and return non-zero
+  # so the caller knows.
+  sleep 2
+  if ! tmux has-session -t "\$sess" 2>/dev/null; then
+    echo "claude-remote: session '\$sess' died immediately." >&2
+    echo "  Run this directly to see the error:" >&2
+    echo "      claude remote-control --name \$sess" >&2
+    return 1
+  fi
   if [ -f "\$hist" ]; then
     (sleep 5 && tmux send-keys -t "\$sess" \\
       "Read \$hist end-to-end. That is the running project history; use it to pick up where we left off. Acknowledge briefly and tell me what is on the backlog." Enter) &
