@@ -174,7 +174,7 @@ deliberately doesn't restate them.
   end-to-end validation hasn't happened yet. File issues.
 - **Python**: 3.11 or newer.
 - **`uv`**: install from [astral.sh/uv](https://docs.astral.sh/uv/).
-- **`git`**, **`ffmpeg`**, and **`git-crypt`** (for encrypted secrets — see "Encrypted secrets" below) on `$PATH`.
+- **`git`**, **`ffmpeg`**, **`tmux`**, and **`git-crypt`** (for encrypted secrets — see "Encrypted secrets" below) on `$PATH`. The curl installer will check for these and tell you how to install any that are missing; the rest of the installer is idempotent so you can re-run it after.
 - **Bun**: for the sidekick proxy. Install from [bun.sh](https://bun.sh).
 - **API keys**:
   - **Deepgram** for STT/TTS in the audio bridge.

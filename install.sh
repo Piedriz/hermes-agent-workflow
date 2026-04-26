@@ -27,10 +27,24 @@ ok()   { printf '%s✓%s %s\n'  "$c_g" "$c_0" "$*"; }
 warn() { printf '%s!%s %s\n'  "$c_y" "$c_0" "$*"; }
 die()  { printf '%s✗%s %s\n' "$c_r" "$c_0" "$*" >&2; exit 1; }
 
-# Prereqs.
-command -v git    >/dev/null || die "git not found on PATH. Install git, then retry."
-command -v claude >/dev/null || die "claude not found on PATH. Install Claude Code first: https://claude.com/claude-code"
-command -v tmux   >/dev/null || die "tmux not found on PATH. Install tmux (apt install tmux / brew install tmux), then retry."
+# Prereqs. Each missing tool prints a platform-aware install hint and
+# tells the user how to resume after they fix it (the rest of install.sh
+# is idempotent — re-running picks up where it left off).
+miss_prereq() {
+  local name="$1" install_hint="$2"
+  printf '%s✗%s %s not found on PATH.\n\n' "$c_r" "$c_0" "$name" >&2
+  printf 'Install it, then resume by re-running:\n\n' >&2
+  printf '    curl -fsSL https://raw.githubusercontent.com/jscholz/hermes-agent-workflow/main/install.sh | bash\n\n' >&2
+  printf 'Install hint:\n  %s\n\n' "$install_hint" >&2
+  exit 1
+}
+
+command -v git >/dev/null \
+  || miss_prereq "git" "Linux: 'sudo apt install git'  ·  macOS: 'xcode-select --install' or 'brew install git'"
+command -v claude >/dev/null \
+  || miss_prereq "claude (Claude Code)" "https://claude.com/claude-code — install + run 'claude' once to log in before re-running this script"
+command -v tmux >/dev/null \
+  || miss_prereq "tmux" "Linux: 'sudo apt install tmux' (Debian/Ubuntu) / 'sudo dnf install tmux' (Fedora)  ·  macOS: 'brew install tmux'"
 
 # Clone (or reuse existing checkout if it points at the right remote).
 if [[ -d "${TARGET}" ]]; then
