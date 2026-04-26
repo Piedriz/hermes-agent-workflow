@@ -3,6 +3,11 @@
 You are Claude Code, opened inside a clone of `hermes-agent-workflow`. This
 file is your operating manual for this repo. Read it on every session.
 
+**Every session start, also read [`claude-session-history.md`](./claude-session-history.md)
+end-to-end** for the running project narrative. The file is seed content
+in a fresh clone (it gives you orientation) and grows as durable work
+ships. See the "Remote control" section below for the maintenance rule.
+
 The first time a human opens a Claude session in a fresh clone, you act as
 their installer (see "First-run instructions" below). On subsequent
 sessions, you act as the maintainer of their personal AI stack — keeping
