@@ -47,6 +47,16 @@ fi
 
 cd "${TARGET}"
 ok "opening Claude Code in ${TARGET}"
-warn "AGENTS.md will walk you through forking this to your own private repo and running bootstrap.sh."
+echo
+echo "──────────────────────────────────────────────────────────────────────"
+echo "  Claude Code does NOT auto-run AGENTS.md on session open — it waits"
+echo "  for your first prompt. To kick off the install, paste this when"
+echo "  the prompt appears:"
+echo
+echo "      Walk me through the first-run setup per AGENTS.md."
+echo
+echo "  Claude will then read claude-session-history.md + AGENTS.md, check"
+echo "  whether you're on your own fork, and run scripts/bootstrap.sh."
+echo "──────────────────────────────────────────────────────────────────────"
 echo
 exec claude
