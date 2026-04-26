@@ -294,6 +294,83 @@ update, open a PR.
 Verify the exact paths against what `scripts/bootstrap.sh` actually
 creates — the script is authoritative and may diverge from this map.
 
+## Remote control (claude-remote)
+
+This deployment ships a `claude-remote` mechanism: a per-host tmux
+session running `claude remote-control` that exposes a Claude Code
+session to claude.ai (web) and the Claude iOS app, so the user can
+drive their agent from a phone.
+
+### How to invoke
+
+From any shell on the host:
+
+```bash
+claude-remote
+```
+
+If a session named `claude-<hostname>` already exists, the function
+returns immediately (so it's safe to call repeatedly — e.g. from a
+shell init or a cron job). Otherwise it launches a detached tmux
+session, starts `claude remote-control` inside it, and (after a short
+delay) sends a one-shot prompt telling the new Claude session to read
+`claude-session-history.md` end-to-end before doing anything else.
+
+The tmux session name is derived from `$HOST_NAME` (or `hostname -s`),
+so multi-host setups don't collide: `claude-blueberry`, `claude-tom-nook`,
+etc.
+
+### Where the session-history lives
+
+`claude-session-history.md` at the repo root. It is **seed content** in
+the public template — not a `.template` suffix, not under `templates/`.
+The user's fork evolves it in place, and on every warm start the new
+Claude Code session reads it to recover context.
+
+### Maintenance rule
+
+Append to `claude-session-history.md` whenever something durable ships:
+
+- Architecture decisions (and the alternatives considered).
+- Non-obvious bug root causes worth a future agent's attention.
+- Major features that landed — commit SHA + a one-line summary.
+- Config changes that would surprise someone reading the codebase cold.
+
+Keep it terse, chronological, most-recent at the bottom. Update the
+"Last updated" line on every meaningful edit. It is the warm-start
+narrative — **not a changelog**, not a diary.
+
+### Setting it up on a new host
+
+```bash
+bash scripts/setup-remote-claude.sh
+```
+
+That installer:
+
+- Verifies `tmux` and `claude` (Claude Code CLI) are on PATH.
+- Resolves the user's instance repo path (env var → PWD → prompt).
+- Detects the user's shell (bash or zsh) and writes the function block
+  into the appropriate rc file, between begin/end markers. Re-running
+  replaces the block in place — that's the idempotency story.
+- Prints next-step instructions (source the rc file, run `claude-remote`).
+
+`scripts/bootstrap.sh` calls this script automatically when it
+finishes installing the rest of the stack, provided tmux and claude
+are on PATH at that point. If they aren't, install them later and
+re-run `setup-remote-claude.sh` standalone.
+
+### Relation to scripts/sync-cc-history.sh
+
+These are complementary, not redundant. `sync-cc-history.sh` snapshots
+finished Claude Code transcripts (the `.jsonl` session files and
+auto-memory under `~/.claude/`) into `hosts/<host>/` on a cron, so a
+host crash doesn't take history with it. `claude-remote` is about a
+**live** session — it's the daily-driver entry point for actually
+talking to Claude Code from the user's phone, with the
+`claude-session-history.md` priming the new session's context. One
+archives the past; the other launches the present.
+
 ## Subsequent sessions (after first-run)
 
 Once the sentinel exists, your job is maintainer not installer. Common

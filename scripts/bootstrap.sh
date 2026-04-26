@@ -369,6 +369,22 @@ section "Apply hermes-agent patches"
 HERMES_AGENT_PATH="${HERMES_AGENT_REPO}" \
   "${REPO}/scripts/apply-patches.sh"
 
+# ── 7c. Install claude-remote shell function ─────────────────────────
+# Drops the `claude-remote` function into the user's shell rc file so
+# they can launch a tmux + Claude Code remote-control session from any
+# shell on this host. Skipped (with a warning) if tmux or claude aren't
+# installed yet — the user can re-run scripts/setup-remote-claude.sh
+# later.
+section "Remote-claude shell function"
+
+if command -v tmux >/dev/null 2>&1 && command -v claude >/dev/null 2>&1; then
+  HERMES_INSTANCE_REPO="${REPO}" \
+    "${REPO}/scripts/setup-remote-claude.sh"
+else
+  warn "tmux or claude (Claude Code CLI) not on PATH — skipping claude-remote setup."
+  warn "  Re-run scripts/setup-remote-claude.sh once both are installed."
+fi
+
 # ── 8. Smoke-test ────────────────────────────────────────────────────
 # Endpoint choice: hermes-gateway exposes /health on its API server port
 # (default 8642 — see hermes-agent/gateway/platforms/api_server.py

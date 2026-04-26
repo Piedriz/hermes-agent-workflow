@@ -8,10 +8,11 @@ Early, working, opinionated. Not a polished product.
 ## What you get
 
 - **hermes-agent** — the [Nous Research](https://github.com/NousResearch/hermes-agent) Python agent runtime (skills, memory, gateway).
-- **sidekick** — a PWA frontend with a Bun proxy and a Python audio bridge for WebRTC voice. Lives in its own repo at [`github.com/jscholz/sidekick`](https://github.com/jscholz/sidekick); this template wires it up.
+- **sidekick** — a [Progressive Web App (PWA)](https://en.wikipedia.org/wiki/Progressive_web_app) frontend with a Bun proxy and a Python audio bridge for WebRTC voice. Lives in its own repo at [`github.com/jscholz/sidekick`](https://github.com/jscholz/sidekick); this template wires it up.
 - **hindsight** — a local memory backend (Postgres + a small FastAPI server) that hermes recalls against.
 - **systemd user units** — for the gateway, hindsight server, sidekick proxy, and audio bridge.
 - **doctor + sync scripts** — health checks, symlink integrity, optional cron-driven backup of agent state to your fork.
+- **`claude-remote` workflow** — a tmux + Claude Code remote-control shell function that lets you drive your agent from claude.ai (web or iOS) on your phone, with warm-start context loaded from a hand-curated `claude-session-history.md` in your fork.
 - **sample skills, configs, and an `AGENTS.md`** — sensible defaults you can edit in place.
 
 ## Quickstart
@@ -43,79 +44,58 @@ Read the script first; it's short.
 
 ## Why fork instead of just using upstream
 
-The repo is a **framework + instance** template:
+The repo is a **framework + instance** template. Your fork is your
+instance — `hermes.config.yaml`, `AGENTS.md`, `SOUL.md`, memories,
+custom skills, and encrypted secrets all live there and never leave
+it. Versioning your fork is also your disaster-recovery story: lose
+the hardware, get a new machine, clone, run bootstrap, you're back —
+including accumulated agent memory and any tweaks you'd made.
 
-- **Your fork is your instance.** Your `hermes.config.yaml`,
-  `AGENTS.md`, `SOUL.md`, memories, custom skills, and encrypted
-  secrets all live in your fork and never leave it. Versioning your
-  fork is also your disaster-recovery story: lose the hardware, get
-  a new machine, clone the fork, run bootstrap, you're back —
-  including accumulated agent memory and any tweaks you'd made.
-- **Upstream stays the framework.** Bootstrap scripts, doctor
-  scripts, systemd units, vendored skills, and the example config
-  template are upstream-owned. When the framework improves, you
-  `git pull` into your fork and merge.
-
-The invariant: **don't edit framework files in your fork.** Add new
-behavior in `scripts/extensions/<custom>.sh` or in
-`skills/user-skills/<your-skill>/`. See `AGENTS.md` for the full
-file-ownership table.
-
-This is the same shape as upstream `NousResearch/hermes-agent` →
-`jscholz/hermes-agent` (a fork that carries local patches) → your
-working tree. Three tiers, each pulling from the one above.
+You pull updates from this repo as upstream when you want them. See
+[`CONTRIBUTING.md`](./CONTRIBUTING.md) for the framework/instance file
+ownership rules and the contribution workflow.
 
 ## Why everything lives in your fork (the symlink pattern)
 
-`hermes-agent` reads from `~/.hermes/` at runtime — that's where
-configs, skills, memories, and per-host state are expected to live.
-The bootstrap wizard sets up `~/.hermes/` as a tree of **symlinks
-into this repo**, so when hermes writes a memory or you tweak a skill
-in place, the change actually lands inside your fork. Commit, push,
-and your full agent state is versioned.
+`hermes-agent` is a Python package. If you install it via `pip` the
+ordinary way, mutable user state — your skills, your accumulated
+memories, your config, OAuth tokens — accumulates in `~/.hermes/`,
+alongside the package's own files. That makes "version my agent
+state" awkward: you don't want to version the whole install, just
+your data within it. And you definitely don't want a `pip install -U`
+quietly overwriting a memory you've curated for months.
 
-This is foundational to how the workflow operates:
+This template solves that with a symlink pattern. The bootstrap
+wizard sets up `~/.hermes/` as a tree of symlinks pointing into your
+fork of this repo. Edits to skills, configs, or accumulated memories
+all land in your repo's directories. `git push` snapshots your full
+agent state; `git clone` + `bootstrap.sh` on a new machine restores
+it.
+
+Concretely:
 
 - The `skills/` tree in this repo is the live skills directory the
-  installed agent reads from. Editing a skill here = editing what
-  the running agent uses, immediately.
+  installed agent reads from. Editing a skill here = editing what the
+  running agent uses, immediately.
 - Your private fork's `memories/` is what the agent recalls against.
   It grows as the agent learns about you.
 - `hosts/<your-host>/` captures per-machine state (Claude Code session
   transcripts, host-local memory snapshots) so multi-machine setups
   don't stomp each other.
 
-Net effect: a single `git push` from any machine snapshots that
-machine's full agent state. A single `git clone` + `bootstrap.sh` on
-new hardware restores it.
+Net effect: one `git push` from any machine snapshots that machine's
+full agent state. One `git clone` + `bootstrap.sh` on new hardware
+restores it.
 
-### Pulling skill updates from upstream hermes-agent
+## Updating hermes-agent
 
-The wrinkle this model creates: `pip install -U hermes-agent` no
-longer auto-updates your skill set. Upstream ships bundled skill
-groups (`apple/`, `productivity/`, `software-development/`, ...) inside
-the package itself, and at first-install time bootstrap copies them
-into your fork's `skills/` directory. Once they're versioned in your
-fork, your repo is the source of truth — pip-upgrading the package
-won't touch your `skills/` tree.
-
-When upstream ships skill improvements you want, the recommended flow
-is the **vendor-branch pattern**:
-
-1. Maintain a `vendored-skills` branch that mirrors a clean snapshot
-   of `~/.hermes/hermes-agent/skills/` (and `optional-skills/`) from a
-   given hermes-agent release. Tag commits with the version.
-2. After `pip install -U hermes-agent`, refresh the vendor branch from
-   the new install tree, commit + tag.
-3. `git merge vendored-skills` into main — git's 3-way merge auto-adopts
-   upstream changes where you haven't customized, preserves your edits
-   where upstream didn't change, and surfaces conflicts only on true
-   collisions.
-
-Tooling for this is pending (`scripts/refresh-vendored-skills.sh` is
-the planned home). For now, treat hermes upgrades as deliberate events
-and merge skill changes by hand. See the workflow notes in
-`CONTRIBUTING.md` for the latest state.
+Because skills are versioned in your fork, `pip install -U
+hermes-agent` no longer auto-updates them — your repo is the source
+of truth. Upstream skill improvements come in via a vendor-branch +
+3-way merge: git auto-adopts upstream changes where you haven't
+customized, preserves your edits where upstream didn't change, and
+surfaces conflicts only on true overlap. See
+[`UPGRADES.md`](./UPGRADES.md) for the procedure.
 
 ## Encrypted secrets (git-crypt)
 
