@@ -1,0 +1,22 @@
+[Unit]
+Description=Hermes Agent web dashboard (config, keys, sessions)
+After=tailscaled.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Bind directly to the tailnet hostname. Socket lives on the tailnet
+# interface only (not LAN-reachable). --insecure is required to bind
+# non-loopback, but the dashboard's Host-header defense still kicks in:
+# only requests with Host: <YOUR_HOST>.tailXXXX.ts.net are accepted.
+# Replace <YOUR_HOST>.tailXXXX.ts.net with your tailnet hostname before enabling.
+ExecStart=%h/.local/bin/hermes dashboard --host <YOUR_HOST>.tailXXXX.ts.net --port 9119 --no-open --insecure
+Restart=on-failure
+RestartSec=5
+Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+# Point hermes at the prebuilt web UI so it doesn't re-run `npm run build`
+# (tsc + vite) on every service start — that's a minutes-long CPU burn on the Pi.
+Environment=HERMES_WEB_DIST=%h/.hermes/hermes-agent/hermes_cli/web_dist
+
+[Install]
+WantedBy=default.target

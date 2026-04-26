@@ -1,0 +1,20 @@
+[Unit]
+Description=Hermes Agent gateway (API server + messaging platform adapters)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# `run` is the foreground/systemd-friendly variant (vs `start` which expects
+# an already-installed service). API server reads API_SERVER_* from
+# ~/.hermes/.env; platform adapters (telegram, etc.) read their tokens same place.
+ExecStart=%h/.local/bin/hermes gateway run
+Restart=on-failure
+RestartSec=10
+Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+# Auto-approve unseen shell hooks so the service doesn't hang waiting for a
+# TTY prompt. Equivalent to --accept-hooks / hooks_auto_accept: true.
+Environment=HERMES_ACCEPT_HOOKS=1
+
+[Install]
+WantedBy=default.target

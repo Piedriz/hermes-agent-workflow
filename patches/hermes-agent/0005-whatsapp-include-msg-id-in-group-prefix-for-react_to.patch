@@ -1,0 +1,63 @@
+From 5c53596869e628be19e50d5669a7429b68f37eaf Mon Sep 17 00:00:00 2001
+From: Jonathan Scholz <jonathan.scholz@gmail.com>
+Date: Sat, 25 Apr 2026 10:25:28 -0400
+Subject: [PATCH 5/8] whatsapp: include msg=<id> in group prefix for
+ react_to_message tool
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+The react_to_message tool (added in earlier commit 167b8a14) needs
+the WAMessageKey id to react to a specific message. Without surfacing
+it in the prompt, the LLM had no way to know the id of an incoming
+message — react was unusable on anything but the bot's own outgoing
+messages.
+
+Format: extend the existing `[Display Name] body` group prefix to
+`[Display Name | msg=ABC123] body`. Pipe separator inside the same
+bracket; pipes in WhatsApp display names are vanishingly rare so
+collision risk is negligible. DMs untouched (one possible sender,
+no prefix).
+
+Companion AGENTS.md update teaches the agent how to read this field
+and pass it to react_to_message.
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+---
+ gateway/platforms/whatsapp.py | 15 ++++++++++++++-
+ 1 file changed, 14 insertions(+), 1 deletion(-)
+
+diff --git a/gateway/platforms/whatsapp.py b/gateway/platforms/whatsapp.py
+index c3669ebd..59138c14 100644
+--- a/gateway/platforms/whatsapp.py
++++ b/gateway/platforms/whatsapp.py
+@@ -1113,12 +1113,25 @@ class WhatsAppAdapter(BasePlatformAdapter):
+             # defeats the trust-tier policy documented in AGENTS.md. DMs are
+             # untouched since there's only one possible sender. Fallback
+             # order: pushName → short JID → "unknown".
++            #
++            # Also append `msg=<id>` so the agent can call the
++            # react_to_message tool on this specific message — the
++            # message_id is otherwise invisible to the LLM since it
++            # only lives in raw_message metadata. Format chosen: pipe
++            # separator inside the same bracket. Pipes in WhatsApp
++            # display names are vanishingly rare; collision risk
++            # negligible. AGENTS.md teaches the agent to extract `msg`
++            # from this prefix when it wants to react.
+             if is_group and body:
+                 sender_name = data.get("senderName")
+                 if not sender_name:
+                     sid = data.get("senderId", "") or ""
+                     sender_name = sid.split("@")[0] if sid else "unknown"
+-                body = f"[{sender_name}] {body}"
++                msg_id = data.get("messageId", "") or ""
++                if msg_id:
++                    body = f"[{sender_name} | msg={msg_id}] {body}"
++                else:
++                    body = f"[{sender_name}] {body}"
+ 
+             return MessageEvent(
+                 text=body,
+-- 
+2.47.3
+

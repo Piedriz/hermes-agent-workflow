@@ -1,0 +1,11 @@
+{
+  "_comment": "Copy to hindsight.config.json and edit. mode=local_external runs hindsight as a separate systemd service; mode=local_embedded runs it in-process inside hermes. bank_id is the per-user namespace for stored memories.",
+  "mode": "local_external",
+  "api_url": "http://127.0.0.1:8765",
+  "bank_id": "<your-bank-id>",
+  "memory_mode": "hybrid",
+  "auto_recall": true,
+  "auto_retain": true,
+  "retain_async": true,
+  "retain_every_n_turns": 1
+}

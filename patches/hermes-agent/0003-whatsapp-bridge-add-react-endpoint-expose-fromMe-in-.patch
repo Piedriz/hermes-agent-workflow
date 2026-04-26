@@ -1,0 +1,81 @@
+From 541b5f38148a73c5ea93e5cc4641bfd218df2b92 Mon Sep 17 00:00:00 2001
+From: Jonathan Scholz <jonathan.scholz@gmail.com>
+Date: Sat, 25 Apr 2026 10:11:01 -0400
+Subject: [PATCH 3/8] whatsapp-bridge: add /react endpoint + expose fromMe in
+ events
+
+Adds POST /react for emoji reactions on a target message. Body:
+  { chatId, messageId, fromMe, participant?, emoji }
+Pass an empty-string emoji to clear a previously-sent reaction.
+
+Also exposes msg.key.fromMe on every emitted event so the Python
+adapter can reconstruct the WAMessageKey when reacting to messages
+the agent itself sent (e.g. self-chat ack flows).
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+---
+ scripts/whatsapp-bridge/bridge.js | 34 +++++++++++++++++++++++++++++++
+ 1 file changed, 34 insertions(+)
+
+diff --git a/scripts/whatsapp-bridge/bridge.js b/scripts/whatsapp-bridge/bridge.js
+index d0e87b9f..977f2983 100644
+--- a/scripts/whatsapp-bridge/bridge.js
++++ b/scripts/whatsapp-bridge/bridge.js
+@@ -10,6 +10,7 @@
+  *   POST /send           - Send a message { chatId, message, replyTo? }
+  *   POST /edit           - Edit a sent message { chatId, messageId, message }
+  *   POST /send-media     - Send media natively { chatId, filePath, mediaType?, caption?, fileName? }
++ *   POST /react          - React to a message { chatId, messageId, fromMe, participant?, emoji }
+  *   POST /typing         - Send typing indicator { chatId }
+  *   GET  /chat/:id       - Get chat info
+  *   GET  /health         - Health check
+@@ -354,6 +355,7 @@ async function startSocket() {
+ 
+       const event = {
+         messageId: msg.key.id,
++        fromMe: !!msg.key.fromMe,
+         chatId,
+         senderId,
+         senderName: msg.pushName || senderNumber,
+@@ -466,6 +468,38 @@ app.post('/edit', async (req, res) => {
+   }
+ });
+ 
++// React to a message with an emoji.
++// Pass an empty string for `emoji` to CLEAR a previously-sent reaction.
++// `participant` is required for group messages (it's the sender of the
++// target message). For 1:1 chats, omit/null.
++app.post('/react', async (req, res) => {
++  if (!sock || connectionState !== 'connected') {
++    return res.status(503).json({ error: 'Not connected to WhatsApp' });
++  }
++
++  const { chatId, messageId, fromMe, participant, emoji } = req.body;
++  if (!chatId || !messageId || typeof emoji !== 'string') {
++    return res.status(400).json({ error: 'chatId, messageId, and emoji are required' });
++  }
++
++  try {
++    const key = {
++      remoteJid: chatId,
++      id: messageId,
++      fromMe: !!fromMe,
++    };
++    if (participant) {
++      key.participant = participant;
++    }
++    await sock.sendMessage(chatId, {
++      react: { text: emoji, key },
++    });
++    res.json({ success: true });
++  } catch (err) {
++    res.status(500).json({ error: err.message });
++  }
++});
++
+ // MIME type map and media type inference for /send-media
+ const MIME_MAP = {
+   jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png',
+-- 
+2.47.3
+

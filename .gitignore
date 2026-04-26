@@ -1,0 +1,42 @@
+# Secrets — only commit through git-crypt (see .gitattributes for the
+# encryption patterns). The negations below allow specific encrypted
+# files past the defensive globs.
+.env
+.env.*
+*.env
+# allow .env back in (encrypted via git-crypt)
+!.env
+
+# Defensive: block anything that smells like a credential UNLESS we've
+# explicitly opted it in to the encryption pipeline.
+*token*
+*credentials*
+*secret*
+# allow these specific encrypted secrets back in
+!google_token.json
+!google_client_secret.json
+# legitimate examples / placeholders stay tracked
+!*.example
+!example.config.yaml
+
+# SQLite — live DBs, never version
+*.db
+*.db-shm
+*.db-wal
+
+# Log files — runtime, ever-growing, never version
+*.log
+
+# Runtime cache the gateway rebuilds every 5 min via atomic_json_write
+# (which nukes any symlink at this path on every refresh). Has no
+# archival value; keep it untracked.
+channel_directory.json
+
+# memory-tool lock files (transient, hermes-created)
+memories/*.lock
+
+# Editor/OS cruft
+.DS_Store
+*.swp
+*~
+scripts/__pycache__/

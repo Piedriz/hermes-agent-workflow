@@ -1,0 +1,308 @@
+From 4838b061f80758cea8601f66eca6466efe98c27f Mon Sep 17 00:00:00 2001
+From: Jonathan Scholz <jonathan.scholz@gmail.com>
+Date: Sat, 25 Apr 2026 10:13:52 -0400
+Subject: [PATCH 4/8] whatsapp: add react_to_message tool + adapter method
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Adds an emoji-reaction path so the agent can ack low-stakes group
+messages without breaking flow with a [jonbot] text reply.
+
+- gateway/platforms/whatsapp.py: WhatsAppAdapter.react_to_message()
+  POSTs to the bridge /react endpoint with the WAMessageKey fields
+  (chatId, messageId, fromMe, participant). Pass empty-string emoji
+  to clear an existing reaction.
+- tools/react_to_message_tool.py: new agent-callable tool with the
+  same signature, registered under toolset='messaging'. Auto-discovered
+  by tools/registry.py's AST scan. Gated on WhatsApp being configured
+  and a session/gateway being active.
+
+NOTE: the agent must know the messageId of the target message. That
+metadata is in event.raw_message but not currently surfaced into the
+prompt body — until that's plumbed, the agent can only react to
+messages whose ids it has retained from earlier tool output (e.g. its
+own prior reply's message_id). Follow-up: surface inbound messageId
+to the prompt body in groups, similar to the existing
+'[Display Name]' prefix.
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+---
+ gateway/platforms/whatsapp.py  |  46 ++++++++
+ tools/react_to_message_tool.py | 207 +++++++++++++++++++++++++++++++++
+ 2 files changed, 253 insertions(+)
+ create mode 100644 tools/react_to_message_tool.py
+
+diff --git a/gateway/platforms/whatsapp.py b/gateway/platforms/whatsapp.py
+index ad41f1ed..c3669ebd 100644
+--- a/gateway/platforms/whatsapp.py
++++ b/gateway/platforms/whatsapp.py
+@@ -755,6 +755,52 @@ class WhatsAppAdapter(BasePlatformAdapter):
+         except Exception as e:
+             return SendResult(success=False, error=str(e))
+ 
++    async def react_to_message(
++        self,
++        chat_id: str,
++        message_id: str,
++        from_me: bool,
++        participant: Optional[str],
++        emoji: str,
++    ) -> bool:
++        """React to a previously-received message with an emoji.
++
++        Pass an empty string for ``emoji`` to clear an existing reaction.
++        ``participant`` is required for group messages (the sender of the
++        target message); pass None for 1:1 chats.
++        """
++        if not self._running or not self._http_session:
++            return False
++        if await self._check_managed_bridge_exit():
++            return False
++        try:
++            import aiohttp
++            payload: Dict[str, Any] = {
++                "chatId": chat_id,
++                "messageId": message_id,
++                "fromMe": bool(from_me),
++                "emoji": emoji,
++            }
++            if participant:
++                payload["participant"] = participant
++            async with self._http_session.post(
++                f"http://127.0.0.1:{self._bridge_port}/react",
++                json=payload,
++                timeout=aiohttp.ClientTimeout(total=15),
++            ) as resp:
++                if resp.status == 200:
++                    return True
++                logger.warning(
++                    "[%s] react_to_message bridge error %s: %s",
++                    self.name, resp.status, await resp.text(),
++                )
++                return False
++        except Exception as e:
++            logger.warning("[%s] react_to_message failed: %s", self.name, e)
++            return False
++        except Exception as e:
++            return SendResult(success=False, error=str(e))
++
+     async def _send_media_to_bridge(
+         self,
+         chat_id: str,
+diff --git a/tools/react_to_message_tool.py b/tools/react_to_message_tool.py
+new file mode 100644
+index 00000000..1ff2ad85
+--- /dev/null
++++ b/tools/react_to_message_tool.py
+@@ -0,0 +1,207 @@
++"""React-to-message tool — emoji reactions on WhatsApp messages.
++
++Allows the agent to react to a specific WhatsApp message with an emoji
++instead of sending a text reply, for low-stakes group acknowledgments
++where a `[jonbot] 👍` text reply would break conversational flow.
++
++The tool calls the local WhatsApp bridge's POST /react endpoint, which
++in turn invokes Baileys' `sendMessage(chatId, { react: { ... } })`.
++
++Required arguments:
++    chat_id     - The WhatsApp chat JID (e.g. "...@g.us" or "...@s.whatsapp.net").
++    message_id  - The Baileys WAMessageKey id of the message to react to.
++    emoji       - Single emoji string. Pass empty string to clear a reaction.
++
++Optional arguments:
++    from_me     - True if the target message was sent by this account
++                  (defaults False — i.e. reacting to someone else).
++    participant - For group messages, the JID of the original message's
++                  sender. Required by Baileys to construct a valid
++                  WAMessageKey in groups; ignored for 1:1 chats.
++
++The agent obtains chat_id, message_id, from_me, participant from the
++incoming message context (they are part of every WhatsApp event the
++bridge emits).
++"""
++
++import json
++import logging
++from typing import Any, Dict, Optional
++
++logger = logging.getLogger(__name__)
++
++
++REACT_TO_MESSAGE_SCHEMA = {
++    "name": "react_to_message",
++    "description": (
++        "React to a WhatsApp message with an emoji instead of sending a "
++        "text reply. Use this for low-stakes acknowledgments in groups "
++        "(agreement, light reaction, 'got it'). The reaction appears "
++        "inline under the target message in the WhatsApp UI without "
++        "interrupting the conversation flow. Pass an empty-string emoji "
++        "to clear an existing reaction. WhatsApp-only."
++    ),
++    "parameters": {
++        "type": "object",
++        "properties": {
++            "chat_id": {
++                "type": "string",
++                "description": (
++                    "WhatsApp chat JID, e.g. '...@g.us' for groups or "
++                    "'...@s.whatsapp.net' for 1:1. From the incoming "
++                    "message context."
++                ),
++            },
++            "message_id": {
++                "type": "string",
++                "description": (
++                    "Baileys WAMessageKey id of the message to react to. "
++                    "From the incoming message context."
++                ),
++            },
++            "emoji": {
++                "type": "string",
++                "description": (
++                    "Single emoji to set as the reaction. Pass an empty "
++                    "string ('') to remove an existing reaction."
++                ),
++            },
++            "from_me": {
++                "type": "boolean",
++                "description": (
++                    "True if the target message was sent by this account. "
++                    "Defaults to false."
++                ),
++            },
++            "participant": {
++                "type": "string",
++                "description": (
++                    "For group chats: the JID of the message author "
++                    "(senderId from the event). Required in groups, "
++                    "ignored in 1:1 chats."
++                ),
++            },
++        },
++        "required": ["chat_id", "message_id", "emoji"],
++    },
++}
++
++
++def react_to_message_tool(args: Dict[str, Any], **kw) -> str:
++    """Handle react_to_message tool calls."""
++    chat_id = (args.get("chat_id") or "").strip()
++    message_id = (args.get("message_id") or "").strip()
++    # `emoji` is required; allow empty-string to mean "clear reaction".
++    emoji = args.get("emoji")
++    if emoji is None:
++        emoji = ""
++    from_me = bool(args.get("from_me", False))
++    participant = args.get("participant") or None
++
++    if not chat_id or not message_id:
++        return json.dumps({"error": "chat_id and message_id are required"})
++
++    from tools.interrupt import is_interrupted
++    if is_interrupted():
++        return json.dumps({"error": "Interrupted"})
++
++    # Resolve bridge port from the gateway WhatsApp config.
++    bridge_port = 3000
++    try:
++        from gateway.config import load_gateway_config, Platform
++        config = load_gateway_config()
++        pconfig = config.platforms.get(Platform.WHATSAPP)
++        if pconfig and pconfig.enabled:
++            bridge_port = int(pconfig.extra.get("bridge_port", 3000))
++    except Exception as e:
++        logger.debug("react_to_message: could not load gateway config: %s", e)
++
++    try:
++        from model_tools import _run_async
++        result = _run_async(_post_react(bridge_port, chat_id, message_id, from_me, participant, emoji))
++        return json.dumps(result)
++    except Exception as e:
++        return json.dumps({"error": f"react_to_message failed: {e}"})
++
++
++async def _post_react(
++    bridge_port: int,
++    chat_id: str,
++    message_id: str,
++    from_me: bool,
++    participant: Optional[str],
++    emoji: str,
++) -> Dict[str, Any]:
++    """POST to the local WhatsApp bridge /react endpoint."""
++    try:
++        import aiohttp
++    except ImportError:
++        return {"error": "aiohttp not installed."}
++
++    payload: Dict[str, Any] = {
++        "chatId": chat_id,
++        "messageId": message_id,
++        "fromMe": from_me,
++        "emoji": emoji,
++    }
++    if participant:
++        payload["participant"] = participant
++
++    try:
++        async with aiohttp.ClientSession() as session:
++            async with session.post(
++                f"http://localhost:{bridge_port}/react",
++                json=payload,
++                timeout=aiohttp.ClientTimeout(total=15),
++            ) as resp:
++                if resp.status == 200:
++                    return {
++                        "success": True,
++                        "platform": "whatsapp",
++                        "chat_id": chat_id,
++                        "message_id": message_id,
++                        "emoji": emoji,
++                    }
++                body_text = await resp.text()
++                return {
++                    "error": (
++                        f"WhatsApp bridge /react error ({resp.status}): {body_text}"
++                    )
++                }
++    except Exception as e:
++        return {"error": f"WhatsApp bridge /react request failed: {e}"}
++
++
++def _check_react_to_message() -> bool:
++    """Gate on WhatsApp being configured and gateway running."""
++    try:
++        from gateway.session_context import get_session_env
++        platform = get_session_env("HERMES_SESSION_PLATFORM", "")
++        if platform and platform != "local":
++            # Inside a gateway session — allow if we're on WhatsApp.
++            return platform == "whatsapp"
++        # CLI / cron context: only available if gateway is up AND WhatsApp
++        # is configured. Reactions only make sense for WhatsApp-originating
++        # messages, so we deliberately don't enable this in pure-CLI mode.
++        from gateway.status import is_gateway_running
++        if not is_gateway_running():
++            return False
++        from gateway.config import load_gateway_config, Platform
++        config = load_gateway_config()
++        pconfig = config.platforms.get(Platform.WHATSAPP)
++        return bool(pconfig and pconfig.enabled)
++    except Exception:
++        return False
++
++
++# --- Registry ---
++from tools.registry import registry  # noqa: E402
++
++registry.register(
++    name="react_to_message",
++    toolset="messaging",
++    schema=REACT_TO_MESSAGE_SCHEMA,
++    handler=react_to_message_tool,
++    check_fn=_check_react_to_message,
++    emoji="🫶",
++)
+-- 
+2.47.3
+

@@ -1,0 +1,58 @@
+From 6bc72fd428d2e2a7a66edfe5733399554db8cced Mon Sep 17 00:00:00 2001
+From: Jonathan Scholz <jonathan.scholz@gmail.com>
+Date: Fri, 24 Apr 2026 19:06:19 -0400
+Subject: [PATCH 1/8] whatsapp: prepend sender identity to group messages
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Bridge extracts senderId (participant JID) + senderName (pushName) on
+every inbound message and posts them in the HTTP event dict, but the
+gateway was dropping both: `text = body` carried only the plain message
+content. That meant all group members' messages arrived at the LLM
+indistinguishable from the session owner's, so (a) the LLM couldn't
+attribute a question to the actual asker, (b) memory-write tool calls
+triggered by a guest were stored under the owner's profile, and (c)
+the trust-tier policy in AGENTS.md was effectively unenforceable.
+
+Prepend `[<pushName>] ` to body for `isGroup` events only, after
+@bot-mention stripping + doc-content injection so the prefix stays at
+the very start of the text the LLM reads. Fallback order:
+pushName → short JID → "unknown". DMs untouched (no ambiguity).
+
+Completes the design intent already documented in
+gateway/session.py:245-256 ("individual sender names are prefixed on
+each user message") — that comment promised behavior that was never
+implemented in code.
+---
+ gateway/platforms/whatsapp.py | 14 ++++++++++++++
+ 1 file changed, 14 insertions(+)
+
+diff --git a/gateway/platforms/whatsapp.py b/gateway/platforms/whatsapp.py
+index a82417a6..ad41f1ed 100644
+--- a/gateway/platforms/whatsapp.py
++++ b/gateway/platforms/whatsapp.py
+@@ -1060,6 +1060,20 @@ class WhatsAppAdapter(BasePlatformAdapter):
+                         except Exception as e:
+                             print(f"[{self.name}] Failed to read document text: {e}", flush=True)
+ 
++            # Prepend sender identity on group messages so the LLM can
++            # attribute each turn to the correct participant. Without this,
++            # every group member's writes arrive indistinguishable from the
++            # session owner's, which breaks memory-write attribution and
++            # defeats the trust-tier policy documented in AGENTS.md. DMs are
++            # untouched since there's only one possible sender. Fallback
++            # order: pushName → short JID → "unknown".
++            if is_group and body:
++                sender_name = data.get("senderName")
++                if not sender_name:
++                    sid = data.get("senderId", "") or ""
++                    sender_name = sid.split("@")[0] if sid else "unknown"
++                body = f"[{sender_name}] {body}"
++
+             return MessageEvent(
+                 text=body,
+                 message_type=msg_type,
+-- 
+2.47.3
+

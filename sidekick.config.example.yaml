@@ -1,0 +1,59 @@
+# Sidekick deployment config — EXAMPLE / TEMPLATE
+#
+# Copy to `sidekick.config.yaml` and edit. See sidekick/example.config.yaml
+# in the sidekick repo for the full schema + comments.
+#
+# Secrets (DEEPGRAM_API_KEY, GW_TOKEN, OPENROUTER_API_KEY, etc.) live in
+# the sidekick.service systemd unit as Environment= entries — NOT in this
+# file.
+
+# ── Branding ──────────────────────────────────────────────────────────
+app:
+  name: <your-sidekick-name>          # e.g. "SideKick"
+  subtitle: <short-tagline>           # e.g. "Agent Portal"
+  agent_label: <agent-display-name>   # what the UI calls the assistant
+  theme_primary: ~                    # hex color or ~ for default
+
+# ── Backend ───────────────────────────────────────────────────────────
+backend:
+  type: hermes
+  hermes:
+    url: http://127.0.0.1:8642
+    cli_path: ~/.local/bin/hermes
+    state_db: ~/.hermes/state.db
+    store_db: ~/.hermes/response_store.db
+    session_prefix: sidekick-
+    session_sources: [api_server, telegram, whatsapp]
+
+# ── Model picker ──────────────────────────────────────────────────────
+# List the models you want pickable in the UI, in priority order. Glob
+# patterns supported. Comment/uncomment to taste.
+models:
+  preferred:
+    - anthropic/claude-opus-*
+    - anthropic/claude-sonnet-*
+    - anthropic/claude-haiku-*
+    - openai/gpt-*
+    - google/gemini-*
+    - google/gemma-*
+    - deepseek/*
+
+# ── Ambient weather (corner widget) ───────────────────────────────────
+weather:
+  lat: ~                              # e.g. 51.5074
+  lon: ~                              # e.g. -0.1278
+
+# ── Server ────────────────────────────────────────────────────────────
+server:
+  port: 3001
+  host: ~
+  disable_screenshot: false
+
+# ── STT keyterm biasing (managed via Settings → STT keyterms in UI) ──
+# Add proper nouns, names, brands, jargon that Deepgram should bias toward.
+stt:
+  keyterms:
+    - <your-name>
+    - <agent-label>
+    - <project-or-product-name>
+    # add other proper nouns / jargon you say often

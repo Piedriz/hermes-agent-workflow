@@ -1,0 +1,20 @@
+[Unit]
+Description=Hindsight memory API server (slim, embedded pg0)
+After=network-online.target
+Wants=network-online.target
+# Hermes-gateway will hit this for memory recall once mode=local_external
+# is set in ~/.hermes/hindsight/config.json. Independent of the gateway —
+# either can restart without taking the other down.
+
+[Service]
+Type=simple
+EnvironmentFile=%h/.hermes/.env
+ExecStart=%h/.hermes/hindsight-server-venv/bin/hindsight-api --host 127.0.0.1 --port 8765 --log-level info
+Restart=on-failure
+RestartSec=10
+# Bind to loopback only — the slim server has no auth layer in this
+# install. If we ever expose it beyond localhost, switch to --ssl-* flags
+# and add an api_key on the client side.
+
+[Install]
+WantedBy=default.target

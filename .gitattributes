@@ -1,0 +1,29 @@
+# git-crypt encryption rules.
+#
+# Files matching these patterns are AES-encrypted at rest in git history
+# but appear plaintext in the working tree once the repo is unlocked
+# (`git-crypt unlock <key>` after clone). Restore on a fresh machine:
+#   git clone <repo>
+#   echo '<base64-key>' | base64 -d | git-crypt unlock -
+#
+# Anything NOT listed here is committed plaintext as usual. The .gitignore
+# patterns still apply (defensive — files matching *token*, *secret* etc.
+# are blocked from accidental adds even before reaching encryption).
+
+# === Secrets at the top level ===
+.env                                   filter=git-crypt diff=git-crypt
+auth.json                              filter=git-crypt diff=git-crypt
+google_client_secret.json              filter=git-crypt diff=git-crypt
+google_token.json                      filter=git-crypt diff=git-crypt
+
+# === WhatsApp Baileys session credentials ===
+# The whole credentials/session dir — losing this means QR-rescan from
+# the WhatsApp app to re-pair, so it MUST be in the encrypted backup.
+whatsapp/session/**                    filter=git-crypt diff=git-crypt
+pairing/**                             filter=git-crypt diff=git-crypt
+
+# === Hindsight bank dump ===
+# pg_dump output written by scripts/sync-hindsight-bank.sh on a daily
+# cron. Encrypted because the bank contains everything the agent has
+# learned about its user — names, addresses, schedule, private context.
+hindsight-data/**                      filter=git-crypt diff=git-crypt
