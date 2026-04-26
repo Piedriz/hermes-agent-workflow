@@ -48,15 +48,11 @@ fi
 cd "${TARGET}"
 ok "opening Claude Code in ${TARGET}"
 echo
-echo "──────────────────────────────────────────────────────────────────────"
-echo "  Claude Code does NOT auto-run AGENTS.md on session open — it waits"
-echo "  for your first prompt. To kick off the install, paste this when"
-echo "  the prompt appears:"
-echo
-echo "      Walk me through the first-run setup per AGENTS.md."
-echo
-echo "  Claude will then read claude-session-history.md + AGENTS.md, check"
-echo "  whether you're on your own fork, and run scripts/bootstrap.sh."
-echo "──────────────────────────────────────────────────────────────────────"
-echo
-exec claude
+
+# Seed an initial prompt so Claude proactively runs the AGENTS.md flow
+# rather than landing on a blank prompt waiting for the user to know
+# what to ask. claude takes a positional [prompt] arg that fires as
+# the first turn; the session stays interactive after.
+readonly KICKOFF='Read claude-session-history.md and AGENTS.md end-to-end, then walk me through the first-run setup. Specifically: check whether I am on my own private fork (Step 1a), help me create one if not, and then run scripts/bootstrap.sh. Be proactive — do the work, do not ask me to confirm each individual step unless something is genuinely ambiguous.'
+
+exec claude --name "hermes-agent-workflow setup" "$KICKOFF"
