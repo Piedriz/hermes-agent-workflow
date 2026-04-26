@@ -19,7 +19,59 @@
 #   Every step must check state first.
 set -euo pipefail
 
-# ── 0. Repo location + UI helpers ────────────────────────────────────
+# ── 0. Argument parsing + repo location + UI helpers ─────────────────
+# Two run modes:
+#   * Interactive (default): prompts you for each value not already set
+#     in the environment. This is what you get from a normal shell run.
+#   * Unattended (--unattended or --env-file <path>): all values must
+#     come from the environment; missing required values cause a
+#     fail-fast abort. Designed so an agent (Claude Code, a CI runner,
+#     etc.) can drive the install without a TTY.
+#
+# Env-file mode reads KEY=VALUE pairs from the file (one per line, '#'
+# comments OK) and exports them, then runs unattended. The file is NOT
+# deleted by the script — caller is responsible for cleanup, since
+# they wrote it.
+UNATTENDED=0
+ENV_FILE_ARG=""
+while (( $# > 0 )); do
+  case "$1" in
+    --unattended) UNATTENDED=1; shift ;;
+    --env-file)
+      shift
+      [[ -n "${1:-}" ]] || { echo "--env-file requires a path" >&2; exit 2; }
+      ENV_FILE_ARG="$1"; UNATTENDED=1; shift ;;
+    --env-file=*) ENV_FILE_ARG="${1#--env-file=}"; UNATTENDED=1; shift ;;
+    -h|--help)
+      cat <<EOF
+Usage: bootstrap.sh [--unattended] [--env-file <path>]
+
+  Interactive (default): prompts for each value not pre-set in env.
+
+  --unattended            Fail if any required value is missing from
+                          the environment. No prompts.
+  --env-file <path>       Read KEY=VALUE pairs from <path> (sourced),
+                          implies --unattended.
+
+Recognized variables (set via env or env-file):
+  HOST_NAME              host name; default: hostname -s
+  SIDEKICK_PATH          sidekick clone path; default: ~/code/sidekick
+  HERMES_HOME            hermes home; default: ~/.hermes
+  AGENT_LAT, AGENT_LON   ambient weather coords; optional
+  DEEPGRAM_API_KEY       required (unless ~/.hermes/.env already has it)
+  OPENROUTER_API_KEY     required (unless ~/.hermes/.env already has it)
+EOF
+      exit 0 ;;
+    *) echo "unknown arg: $1" >&2; exit 2 ;;
+  esac
+done
+
+if [[ -n "${ENV_FILE_ARG}" ]]; then
+  [[ -r "${ENV_FILE_ARG}" ]] || { echo "env-file not readable: ${ENV_FILE_ARG}" >&2; exit 2; }
+  # shellcheck disable=SC1090
+  set -a; source "${ENV_FILE_ARG}"; set +a
+fi
+
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 
 # ANSI escapes — avoid external tput dep so the script works in minimal
@@ -79,10 +131,27 @@ SIDEKICK_PATH_DEFAULT="${HOME}/code/sidekick"
 
 prompt_default() {
   # prompt_default <var-name> <prompt-text> <default> [--required]
+  # Interactive: prompts the user, falling back to <default> on Enter.
+  # Unattended: uses the env-set value, falling back to <default>;
+  # fails if --required and neither env nor default is non-empty.
   local var="$1" text="$2" default="$3" required="${4:-}"
   local current="${!var:-}"
   if [[ -n "${current}" ]]; then
     ok "${var}=${current} (from environment)"
+    return
+  fi
+  if (( UNATTENDED )); then
+    if [[ -n "${default}" ]]; then
+      printf -v "${var}" '%s' "${default}"
+      export "${var}"
+      ok "${var}=${default} (unattended default)"
+      return
+    fi
+    if [[ "${required}" == "--required" ]]; then
+      fail "${var} is required (set it in the environment or env-file before re-running)."
+    fi
+    printf -v "${var}" '%s' ""
+    export "${var}"
     return
   fi
   local answer
@@ -101,13 +170,25 @@ prompt_default() {
 
 prompt_secret() {
   # prompt_secret <var-name> <prompt-text> [--required]
-  # Reads silently. Skipped if .env already has the key.
+  # Reads silently in interactive mode. Skipped if .env already has the
+  # key. Unattended: uses env-set value; fails if --required and unset.
   local var="$1" text="$2" required="${3:-}"
   local env_file="${HERMES_HOME}/.env"
   if [[ -f "${env_file}" ]] && grep -qE "^${var}=" "${env_file}"; then
     ok "${var} found in ${env_file}, leaving as-is"
     printf -v "${var}" '%s' "__KEEP__"
     export "${var}"
+    return
+  fi
+  local current="${!var:-}"
+  if [[ -n "${current}" ]]; then
+    ok "${var} set from environment (will be written to .env)"
+    return
+  fi
+  if (( UNATTENDED )); then
+    if [[ "${required}" == "--required" ]]; then
+      fail "${var} is required (set it in the environment or env-file before re-running)."
+    fi
     return
   fi
   local answer
