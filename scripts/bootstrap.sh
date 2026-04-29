@@ -60,6 +60,7 @@ Recognized variables (set via env or env-file):
   AGENT_LAT, AGENT_LON   ambient weather coords; optional
   DEEPGRAM_API_KEY       required (unless ~/.hermes/.env already has it)
   OPENROUTER_API_KEY     required (unless ~/.hermes/.env already has it)
+  TAVILY_API_KEY         optional (enables web_search tool); skip with empty value
 EOF
       exit 0 ;;
     *) echo "unknown arg: $1" >&2; exit 2 ;;
@@ -211,8 +212,11 @@ prompt_default AGENT_LON      "agent longitude (for ambient weather widget, opti
 mkdir -p "${HERMES_HOME}"
 
 # Secret prompts — only ask if .env doesn't already have them
-prompt_secret  DEEPGRAM_API_KEY    "Deepgram API key (for STT)"          --required
-prompt_secret  OPENROUTER_API_KEY  "OpenRouter API key (for LLM access)" --required
+prompt_secret  DEEPGRAM_API_KEY    "Deepgram API key (for STT)"                    --required
+prompt_secret  OPENROUTER_API_KEY  "OpenRouter API key (for LLM access)"           --required
+# Optional: empty value skips. The web_search tool auto-detects this in
+# hermes via TAVILY_API_KEY; absent → tool not registered.
+prompt_secret  TAVILY_API_KEY      "Tavily API key (for web_search, optional)"
 
 # ── 3. Sidekick clone ────────────────────────────────────────────────
 # The PWA + audio bridge live in a separate public repo. We clone as a
@@ -435,6 +439,7 @@ write_env() {
 
 write_env DEEPGRAM_API_KEY    "${DEEPGRAM_API_KEY}"
 write_env OPENROUTER_API_KEY  "${OPENROUTER_API_KEY}"
+write_env TAVILY_API_KEY      "${TAVILY_API_KEY:-}"
 [[ -n "${AGENT_LAT}" ]] && write_env AGENT_LAT "${AGENT_LAT}"
 [[ -n "${AGENT_LON}" ]] && write_env AGENT_LON "${AGENT_LON}"
 ok "secrets written to ${ENV_FILE} (mode 600)"
