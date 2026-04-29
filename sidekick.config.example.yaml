@@ -3,9 +3,10 @@
 # Copy to `sidekick.config.yaml` and edit. See sidekick/example.config.yaml
 # in the sidekick repo for the full schema + comments.
 #
-# Secrets (DEEPGRAM_API_KEY, GW_TOKEN, OPENROUTER_API_KEY, etc.) live in
-# the sidekick.service systemd unit as Environment= entries — NOT in this
-# file.
+# Secrets (DEEPGRAM_API_KEY, GW_TOKEN, OPENROUTER_API_KEY, TAVILY_API_KEY,
+# etc.) live in the sidekick.service systemd unit as Environment= entries
+# — NOT in this file. TAVILY_API_KEY is optional; without it hermes's
+# web_search / web_extract tools are no-ops. Free tier at https://tavily.com.
 
 # ── Branding ──────────────────────────────────────────────────────────
 app:
@@ -23,7 +24,11 @@ backend:
     state_db: ~/.hermes/state.db
     store_db: ~/.hermes/response_store.db
     session_prefix: sidekick-
-    session_sources: [api_server, telegram, whatsapp]
+    # Which hermes platforms surface in the drawer. `api_server` is sidekick
+    # itself; add the chat platforms you want visible (telegram/whatsapp/
+    # slack/signal/discord). Non-sidekick chats render with a source badge
+    # and a read-only composer (sidekick can't send to those platforms yet).
+    session_sources: [api_server, telegram, whatsapp, slack]
 
 # ── Model picker ──────────────────────────────────────────────────────
 # List the models you want pickable in the UI, in priority order. Glob

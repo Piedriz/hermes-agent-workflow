@@ -167,6 +167,34 @@ re-encrypt of history, doable but disruptive.
 For deeper detail on each piece, follow the upstream links — this repo
 deliberately doesn't restate them.
 
+## What the sidekick PWA gives you
+
+Once the deployment is up, the PWA at `https://<host>.local` is the
+day-to-day surface. A few capabilities worth flagging — see the
+[sidekick repo](https://github.com/jscholz/sidekick) for the full
+story:
+
+- **Cross-platform session visibility.** The chat drawer shows every
+  conversation hermes is tracking — telegram, slack, whatsapp, signal,
+  etc. — alongside sidekick chats, with a per-row source badge. Useful
+  for monitoring multi-channel agent activity from one pane. The
+  composer is read-only when viewing a non-sidekick chat (sidekick
+  can't currently send to other platforms).
+- **Live drawer updates.** Cross-platform chats refresh via a 5s poll
+  while the PWA is foregrounded, plus an immediate refresh on
+  tab-focus. Sidekick-owned chats stay live via SSE as before.
+- **Web search via Tavily.** When `TAVILY_API_KEY` is set in
+  `~/.hermes/.env`, hermes's `web_search` / `web_extract` tools work
+  out of the box. See "Requirements" below.
+- **Lazy chat creation.** "New chat" no longer mints an empty stub —
+  the chat materializes on first send, so the drawer never shows
+  empty rows.
+- **Atomic send with retry.** If a send fails to reach the agent, the
+  bubble flips to a `.failed` state with Retry / Dismiss controls
+  rather than leaving a delivered-looking message that never landed.
+- **First-message snippet fallback.** Drawer rows show a snippet of
+  the first user message until hermes generates a real title.
+
 ## Requirements
 
 - **OS**: Linux (Pi 5 / Ubuntu / Debian validated). macOS support is
@@ -180,8 +208,13 @@ deliberately doesn't restate them.
   - **Deepgram** for STT/TTS in the audio bridge.
   - An **LLM provider key** — OpenRouter, Anthropic, OpenAI, or a
     local backend; configure per `hermes.config.yaml`.
+  - **Tavily** (optional) — set `TAVILY_API_KEY` in `~/.hermes/.env`
+    to enable hermes's `web_search` / `web_extract` tools. Free tier
+    is 1000 requests/month; sign up at [tavily.com](https://tavily.com).
+    Without it, `web_search` is a no-op.
 
-The bootstrap wizard prompts for these.
+The bootstrap wizard prompts for the required ones; Tavily is
+optional and can be added to `~/.hermes/.env` after the fact.
 
 ## Status
 
