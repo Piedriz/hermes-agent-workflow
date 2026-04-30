@@ -30,18 +30,10 @@ backend:
     # and a read-only composer (sidekick can't send to those platforms yet).
     session_sources: [api_server, telegram, whatsapp, slack]
 
-# ── Model picker ──────────────────────────────────────────────────────
-# List the models you want pickable in the UI, in priority order. Glob
-# patterns supported. Comment/uncomment to taste.
-models:
-  preferred:
-    - anthropic/claude-opus-*
-    - anthropic/claude-sonnet-*
-    - anthropic/claude-haiku-*
-    - openai/gpt-*
-    - google/gemini-*
-    - google/gemma-*
-    - deepseek/*
+# Model picker is now agent-side. The filter list lives at
+# ~/.hermes/config.yaml under `sidekick.preferred_models:` and is
+# editable from Settings → Preferred models in the PWA (writes back
+# via /v1/settings/preferred_models). No sidekick-side config here.
 
 # ── Ambient weather (corner widget) ───────────────────────────────────
 weather:
