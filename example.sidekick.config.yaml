@@ -30,11 +30,6 @@ backend:
     # and a read-only composer (sidekick can't send to those platforms yet).
     session_sources: [api_server, telegram, whatsapp, slack]
 
-# Model picker is now agent-side. The filter list lives at
-# ~/.hermes/config.yaml under `sidekick.preferred_models:` and is
-# editable from Settings → Preferred models in the PWA (writes back
-# via /v1/settings/preferred_models). No sidekick-side config here.
-
 # ── Ambient weather (corner widget) ───────────────────────────────────
 weather:
   lat: ~                              # e.g. 51.5074
