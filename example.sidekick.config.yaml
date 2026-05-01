@@ -17,13 +17,13 @@ app:
 
 # ── Backend ───────────────────────────────────────────────────────────
 backend:
-  type: hermes
-  hermes:
-    url: http://127.0.0.1:8642
-    cli_path: ~/.local/bin/hermes
-    state_db: ~/.hermes/state.db
-    store_db: ~/.hermes/response_store.db
-    session_prefix: sidekick-
+  sidekick_platform:
+    # Hermes platform-adapter (peer of telegram/slack/signal). The
+    # adapter runs in-process inside hermes-agent on port 8645.
+    # Auth token comes from $SIDEKICK_PLATFORM_TOKEN (systemd drop-in
+    # or env). Sidekick reads only this key — the legacy backend.hermes
+    # block (state_db / store_db / cli_path) is gone post-refactor.
+    url: http://127.0.0.1:8645
     # Which hermes platforms surface in the drawer. `api_server` is sidekick
     # itself; add the chat platforms you want visible (telegram/whatsapp/
     # slack/signal/discord). Non-sidekick chats render with a source badge
