@@ -104,12 +104,35 @@ ${BEGIN_MARKER}
 claude-remote() {
   local host="\${HOST_NAME:-\$(hostname -s)}"
   local sess="claude-\${host}"
-  local hist="\${HERMES_INSTANCE_REPO:-${RESOLVED_REPO}}/${HISTORY_FILENAME}"
+  local repo="\${HERMES_INSTANCE_REPO:-${RESOLVED_REPO}}"
+  local hist="\$repo/${HISTORY_FILENAME}"
   if tmux has-session -t "\$sess" 2>/dev/null; then
     return 0
   fi
+  # Pre-flight: repo must exist on disk. Without this, a missing repo
+  # would manifest as the generic "session died immediately" error
+  # below, because the inner 'cd \$repo' fails and claude bails.
+  if [ ! -d "\$repo" ]; then
+    echo "claude-remote: instance repo not found at: \$repo" >&2
+    echo "  Fix: set HERMES_INSTANCE_REPO=/path/to/repo, or re-run" >&2
+    echo "       hermes-agent-workflow/scripts/setup-remote-claude.sh" >&2
+    echo "       from your instance repo to re-bake the default." >&2
+    return 1
+  fi
+  # We cd into the instance repo (not \$HOME) for two reasons:
+  #  1. \$HOME often isn't a trusted workspace, so 'claude remote-control'
+  #     bails with "Workspace not trusted" before tmux even sees output.
+  #  2. The repo IS the project context the warm-start prompt is about,
+  #     so cwd-sensitive tools (git, ls, grep) just work.
+  # --spawn=same-dir is pinned: the alternative ('worktree') asks git
+  # to materialize a fresh checkout per session, which trips the
+  # git-crypt smudge filter on .env (the worktree's \$GIT_DIR has no
+  # git-crypt/keys/default) and aborts session creation. same-dir
+  # reuses the already-unlocked checkout. Pressing 'w' inside
+  # remote-control toggles this and persists it to ~/.claude.json as
+  # tengu_worktree_mode=true — passing the flag overrides that.
   tmux new-session -d -s "\$sess" -x 200 -y 50 \\
-    "cd ~ && claude remote-control --name \$sess"
+    "cd \$repo && claude remote-control --name \$sess --spawn=same-dir"
   # claude remote-control sometimes exits immediately (auth failure,
   # account doesn't have the feature, version mismatch) — that kills
   # the only window in the new session, which kills the session, which
