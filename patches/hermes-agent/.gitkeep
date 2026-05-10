@@ -1,0 +1,3 @@
+# This directory holds local patches applied on top of upstream
+# hermes-agent. It ships empty in this template — see PATCHES.md
+# for how to add your own.

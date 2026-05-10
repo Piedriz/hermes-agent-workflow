@@ -1,42 +1,83 @@
 # Patches
 
-Local patches the workflow carries on top of upstream
-[`NousResearch/hermes-agent`](https://github.com/NousResearch/hermes-agent).
-They are applied at install/update time by `scripts/apply-patches.sh`
-against a clean checkout pinned to `origin/main`.
+This template ships **virgin hermes-agent** — no patches applied to
+the upstream package by default. The agent you get after running
+`scripts/bootstrap.sh` is whatever
+[`NousResearch/hermes-agent`](https://github.com/NousResearch/hermes-agent)
+publishes at the time of install (pinned to a recent tag in the
+bootstrap script for stability).
 
-See `CONTRIBUTING.md` for the full add/review/pull workflow. The
-patches below are stored as `git format-patch` output; they are
-plaintext and human-reviewable in PR diffs.
+The patch *infrastructure* is still in place — empty
+`patches/hermes-agent/` directory, `scripts/apply-patches.sh` and
+`scripts/export-patches.sh` ready to use — so you can layer your own
+local changes on top without setting anything up.
 
-## Active patches (applied in order)
+## Why no patches?
 
-| File | What it does | Why not yet upstream | Upstream candidate? |
-|------|--------------|----------------------|---------------------|
-| `0001-whatsapp-prepend-sender-identity-to-group-messages.patch` | Prepends a `sender=<jid>` prefix to inbound group messages so the agent can address replies and disambiguate speakers in a group thread. | No PR opened yet; bundle plan calls for a focused "group identity prefix" PR. | Yes — useful for any group-aware bot. |
-| `0002-whatsapp-bridge-allow-fromMe-isGroup-messages-throug.patch` | Lets the WhatsApp bridge forward `fromMe`+`isGroup` messages into the gateway (previously dropped) so the agent can see its own outbound traffic for context and react to it. | No PR opened yet; pairs with the react-tool bundle. | Yes — pairs with react tool. |
-| `0003-whatsapp-bridge-add-react-endpoint-expose-fromMe-in-.patch` | Adds a `POST /react` endpoint to the WhatsApp bridge and exposes `fromMe` in event payloads so the agent can react to messages by ID. | No PR opened yet; pairs with the react-tool bundle. | Yes — pairs with react tool. |
-| `0004-whatsapp-add-react_to_message-tool-adapter-method.patch` | Adds a `react_to_message` tool + adapter method so the agent can react with an emoji to a specific message id. | No PR opened yet; clean feature PR queued. | Yes — clean feature add. |
-| `0005-whatsapp-include-msg-id-in-group-prefix-for-react_to.patch` | Includes `msg=<id>` in the group message prefix so the react-tool has a stable id to target. | No PR opened yet; pairs with react tool. | Yes — pairs with react tool. |
-| `0006-gateway-suppress-busy-ack-chat-message-on-WhatsApp.patch` | Suppresses the "I'm busy, hang on" auto-ack chat message on the WhatsApp platform — for chat surfaces it's noise, not signal. | No PR opened yet; queued as a focused bug-fix PR. | Yes — bug fix, fully general. |
-| `0007-whatsapp-per-group-mute-with-canned-reply-for-dev-si.patch` | Adds per-group mute config (`whatsapp.group_muted` + `whatsapp.muted_reply`) for silencing the bot in dev/test groups while still acknowledging the message. | No PR opened yet; queued as a small standalone PR. | Yes — clean general feature. |
-| `0008-tools-add-video_analyze_tool-gemini-3-flash-via-open.patch` | Adds a `video_analyze` tool (Gemini 3 Flash via OpenRouter, with ffmpeg keyframe fallback) plus auto-enrichment for inbound video media in the gateway. | No PR opened yet; queued as a feature PR. | Yes — clean feature add. |
+This template's job is to give a new user a working hermes-agent +
+sidekick install with the resume protocol, prune cron, and other
+workflow conveniences. The personal customizations the original
+author iterates on (group-mute toggles, react tools, identity prefix
+for shared groups) are deliberately kept out: they're personal
+opinions, they drift against upstream, and they shouldn't be
+inherited by every new user.
 
-Patches that touched the WebRTC subsystem are intentionally **not**
-included — the WebRTC stack moved out of hermes-agent into the
-sidekick repo (`audio-bridge/`), and the in-tree removal commit is
-pure subtraction, not portable across upstream rebases.
+If you eventually need a patch, add it the same way you would in any
+git project — see the workflow below.
+
+## Adding your own patches
+
+1. Make changes in your `~/.hermes/hermes-agent/` checkout on a
+   feature branch. Commit cleanly (one logical change per commit;
+   easier to upstream later).
+
+2. Export to this repo:
+
+   ```bash
+   ./scripts/export-patches.sh hermes-agent <your-feature-branch>
+   ```
+
+   This writes one `.patch` file per commit into
+   `patches/hermes-agent/`, named by `git format-patch` convention
+   (`0001-<subject>.patch`, etc.).
+
+3. Commit the `.patch` files to this repo and push. Document each
+   patch in the table below.
+
+4. On the next `bootstrap.sh` run (or directly via
+   `scripts/apply-patches.sh`), the patches will be replayed onto
+   a clean upstream checkout in dependency order.
 
 ## How patches stay current
 
 When upstream `hermes-agent` moves, a patch may stop applying cleanly.
-The contributor who originated the patch is responsible for refreshing
-it: rebase the source branch in their `~/.hermes/hermes-agent/`
-checkout onto the new `origin/main`, then re-export via
-`scripts/export-patches.sh hermes-agent <branch>` and open a PR with
-the regenerated `.patch` files.
+Refresh by:
 
-If a patch silently breaks (still applies, but the surrounding code
-was renamed/moved underneath it), the next `apply-patches.sh` run
-fails loudly via `git am` — there's no way for the patch to land
-with a stale assumption baked in.
+```bash
+cd ~/.hermes/hermes-agent
+git fetch origin
+git rebase origin/main local/<your-feature-branch>
+# resolve any conflicts
+~/<this-repo>/scripts/export-patches.sh hermes-agent local/<your-feature-branch>
+# commit the regenerated .patch files
+```
+
+`apply-patches.sh` fails loudly via `git am` if a patch can't apply,
+so stale assumptions never silently land.
+
+## Active patches
+
+(empty — no patches applied by default)
+
+| File | What it does | Why not yet upstream | Upstream candidate? |
+|------|--------------|----------------------|---------------------|
+
+## Notes
+
+- Patches that touched the WebRTC subsystem are intentionally NOT
+  included anywhere in this template — the WebRTC stack moved out of
+  hermes-agent into the sidekick repo (`audio-bridge/`).
+- The sidekick-platform adapter patch (needed for sidekick ↔ hermes
+  integration) lives in the sidekick repo itself
+  (`backends/hermes/plugin/0001-add-sidekick-platform.patch`), not
+  here. It's applied by sidekick's own install script.

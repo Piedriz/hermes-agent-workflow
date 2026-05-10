@@ -578,15 +578,21 @@ write_env TAVILY_API_KEY      "${TAVILY_API_KEY:-}"
 ok "secrets written to ${ENV_FILE} (mode 600)"
 
 # ── 7b. Apply local patches ──────────────────────────────────────────
-# Replay the workflow's hermes-agent patches on top of upstream. This
-# step runs AFTER the editable install (so HERMES_AGENT_REPO is a real
-# git checkout) and BEFORE the smoke test (so the gateway boots with
-# the patches applied). The script is idempotent — re-running bootstrap
+# This template ships virgin hermes-agent — `patches/hermes-agent/` is
+# empty by default, and this section is a no-op. If you've added your
+# own patches (see PATCHES.md), apply-patches.sh replays them onto
+# upstream here. The script is idempotent — re-running bootstrap
 # won't re-apply if nothing has changed.
-section "Apply hermes-agent patches"
-
-HERMES_AGENT_PATH="${HERMES_AGENT_REPO}" \
-  "${REPO}/scripts/apply-patches.sh"
+shopt -s nullglob
+PATCHES=( "${REPO}/patches/hermes-agent"/*.patch )
+shopt -u nullglob
+if (( ${#PATCHES[@]} > 0 )); then
+  section "Apply hermes-agent patches"
+  HERMES_AGENT_PATH="${HERMES_AGENT_REPO}" \
+    "${REPO}/scripts/apply-patches.sh"
+else
+  info "Skipping hermes-agent patch step — patches/hermes-agent/ is empty (this template ships virgin hermes-agent)."
+fi
 
 # ── 7c. Install claude-remote shell function ─────────────────────────
 # Drops the `claude-remote` function into the user's shell rc file so
