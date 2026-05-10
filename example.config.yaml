@@ -82,16 +82,17 @@ agent:
       is AMAZING and we're gonna CRUSH IT together! This is gonna be LEGENDARY! ARE
       YOU READY?! LET'S DO THIS! 💪😤🚀
 platform_toolsets:
-  cli:
-  - hermes-cli
-  # Add toolsets for platforms you've configured. The full list of
-  # upstream-supported platforms is in hermes-agent's documentation;
-  # the example below is the WhatsApp adapter which this template's
-  # bundled gateway-bridge supports out of the box. Other integrations
-  # (Slack, Notion, Google Workspace, etc.) are not configured by this
-  # template — register them yourself per upstream hermes-agent docs.
-  whatsapp:
-  - hermes-whatsapp
+  cli: [hermes-cli]
+  telegram: [hermes-telegram]
+  discord: [hermes-discord]
+  whatsapp: [hermes-whatsapp]
+  slack: [hermes-slack]
+  signal: [hermes-signal]
+  homeassistant: [hermes-homeassistant]
+  qqbot: [hermes-qqbot]
+  yuanbao: [hermes-yuanbao]
+  teams: [hermes-teams]
+  google_chat: [hermes-google_chat]
 
 # WhatsApp adapter config (consumed when the gateway-bridge loads the
 # WhatsApp platform). All fields are optional; fill in values that match
