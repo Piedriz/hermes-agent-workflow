@@ -250,21 +250,29 @@ else
   ok "sidekick cloned"
 fi
 
-# ── 4. Config symlink layout ─────────────────────────────────────────
-# The workflow repo IS the source of truth for config — ~/.hermes/ is a
-# façade pointing back at versioned files in this repo. Mirrors the
-# private-repo pattern. We never overwrite an existing config.yaml; if
-# the user has one, we assume they know what they're doing.
-section "Config layout"
+# ── 4. Symlink layout ────────────────────────────────────────────────
+# The workflow repo IS the source of truth for config + state — ~/.hermes/
+# is a façade pointing back at versioned files in this repo. See
+# README.md "What gets versioned in your fork" for the full state map.
+#
+# Two link shapes:
+#   - link_template: repo path is a "*.example" template that becomes
+#     the live file (e.g., example.config.yaml → ~/.hermes/config.yaml).
+#     Skipped silently if user already has a non-symlink at the live
+#     path (assume they know what they're doing).
+#   - link_dir: repo path is the directory itself, becomes the live
+#     directory (e.g., skills/ → ~/.hermes/skills/).
+#
+# Encrypted-at-rest entries (.env, auth.json, OAuth tokens, whatsapp
+# session, hindsight + state.db dumps) are also wired here. They're
+# git-crypt'd via .gitattributes patterns; the symlink works the same
+# way regardless of plaintext-vs-encrypted-in-history.
+section "Symlink layout"
 
 link_template() {
   # link_template <repo-relative-template> <hermes-relative-target>
   local tmpl="${REPO}/$1" live="${HERMES_HOME}/$2"
   if [[ ! -e "${tmpl}" ]]; then
-    # TODO(jscholz): the workflow repo doesn't have these template files
-    # yet — they'll land alongside the repo skeleton. Skip silently for
-    # v0 so the bootstrap still completes; a future doctor.sh check can
-    # warn if they end up missing in a real install.
     warn "template missing in repo: $1 (skipping)"
     return
   fi
@@ -281,13 +289,85 @@ link_template() {
   ok "linked ${live} → ${tmpl}"
 }
 
-# TODO(jscholz): canonical template filenames — confirm these match the
-# v0 hermes-agent-workflow skeleton. Defaults below mirror the private
-# repo's hermes.config.yaml + AGENTS.md + SOUL.md layout.
-link_template "example.config.yaml"        "config.yaml"
-link_template "example.AGENTS.md"          "AGENTS.md"
-link_template "example.SOUL.md"            "SOUL.md"
-link_template "example.hindsight.config.json" "hindsight/config.json"
+link_dir() {
+  # link_dir <repo-relative-dir> <hermes-relative-dir>
+  # Symlinks an entire directory from the repo into ~/.hermes/. The repo
+  # dir must exist (use a .gitkeep marker if seeded empty).
+  local src="${REPO}/$1" live="${HERMES_HOME}/$2"
+  if [[ ! -d "${src}" ]]; then
+    warn "directory missing in repo: $1 (skipping)"
+    return
+  fi
+  if [[ -L "${live}" ]]; then
+    local current; current="$(readlink "${live}")"
+    if [[ "${current}" == "${src}" ]]; then
+      ok "${live} already linked"
+      return
+    fi
+    warn "relinking ${live} (was → ${current})"
+    rm "${live}"
+  elif [[ -d "${live}" ]] && [[ -n "$(ls -A "${live}" 2>/dev/null)" ]]; then
+    warn "${live} exists with content — leaving as-is (manual migration if you want it versioned)"
+    return
+  elif [[ -e "${live}" ]]; then
+    warn "${live} is a regular file — leaving as-is"
+    return
+  elif [[ -d "${live}" ]]; then
+    rmdir "${live}" 2>/dev/null || true
+  fi
+  mkdir -p "$(dirname "${live}")"
+  ln -s "${src}" "${live}"
+  ok "linked ${live}/ → ${src}/"
+}
+
+link_secret() {
+  # link_secret <repo-relative-target> <hermes-relative-target>
+  # Symlinks an encrypted-at-rest file (or one prompted-into during
+  # bootstrap, e.g. .env). Skips if repo target doesn't exist yet —
+  # bootstrap §7 (Secrets → .env) creates it; subsequent runs link it.
+  local src="${REPO}/$1" live="${HERMES_HOME}/$2"
+  if [[ ! -e "${src}" ]]; then
+    return  # silently — these get created later
+  fi
+  if [[ -L "${live}" ]]; then
+    ok "${live} already linked"
+    return
+  fi
+  if [[ -e "${live}" ]]; then
+    warn "${live} exists (regular file) — leaving as-is"
+    return
+  fi
+  mkdir -p "$(dirname "${live}")"
+  ln -s "${src}" "${live}"
+  ok "linked ${live} → ${src}"
+}
+
+# Templates → live config files (plaintext, never encrypted)
+link_template "example.config.yaml"            "config.yaml"
+link_template "example.AGENTS.md"              "AGENTS.md"
+link_template "SOUL.md.template"               "SOUL.md"
+link_template "example.hindsight.config.json"  "hindsight/config.json"
+
+# Versioned state directories (plaintext)
+link_dir "memories"           "memories"
+link_dir "skills"             "skills"
+link_dir "cron"               "cron"
+link_dir "hooks"              "hooks"
+link_dir "plugins"            "plugins"
+
+# Versioned state directories (git-crypt encrypted via .gitattributes —
+# the symlink works the same; encryption applies in git history).
+link_dir "whatsapp"           "whatsapp"
+link_dir "pairing"            "pairing"
+
+# Encrypted secrets — created later by bootstrap §7 (.env) or by user
+# action (auth.json from `hermes auth`, OAuth tokens via gog/google-workspace).
+# link_secret is a no-op until the file exists; subsequent bootstrap
+# runs pick them up.
+link_secret ".env"                       ".env"
+link_secret "auth.json"                  "auth.json"
+link_secret "google_client_secret.json"  "google_client_secret.json"
+link_secret "google_token.json"          "google_token.json"
 
 # ── 5. uv venvs ──────────────────────────────────────────────────────
 # Three venvs, three install patterns. uv handles them all but each has
@@ -694,4 +774,12 @@ cat <<EOF
     want per-instance changes that aren't tracked by the framework repo)
 
 EOF
+
+# Sentinel — CLAUDE.md (and any future tooling) reads this to detect
+# "bootstrap finished" without having to verify every individual step.
+# Updated on every successful run; the mtime is the latest-bootstrap
+# timestamp.
+mkdir -p "${HERMES_HOME}"
+date -u +%Y-%m-%dT%H:%M:%SZ > "${HERMES_HOME}/.bootstrap.complete"
+
 ok "bootstrap complete"
