@@ -14,9 +14,9 @@
 #   sane defaults for the rest.
 #
 # WHY idempotent:
-#   Tom will run this multiple times: once to bootstrap, once after he
-#   learns about a new env var, once when he debugs a failing service.
-#   Every step must check state first.
+#   The user will run this multiple times: once to bootstrap, once after
+#   they learn about a new env var, once when they debug a failing
+#   service. Every step must check state first.
 set -euo pipefail
 
 # ── 0. Argument parsing + repo location + UI helpers ─────────────────
@@ -109,7 +109,7 @@ need git     "apt install git  |  brew install git"
 need ffmpeg  "apt install ffmpeg  |  brew install ffmpeg"
 
 # python3.11+ check — uv would catch this later but a clear message now
-# saves Tom 10 minutes of confusing tracebacks.
+# saves the user 10 minutes of confusing tracebacks.
 if ! command -v python3 >/dev/null 2>&1; then
   fail "python3 not on PATH. Install Python 3.11+ first."
 fi
@@ -119,6 +119,21 @@ if (( PY_MAJ < 3 || (PY_MAJ == 3 && PY_MIN < 11) )); then
   fail "python3 is ${PY_VER}, need >=3.11. Install Python 3.11+ (uv can manage one: uv python install 3.11)."
 fi
 ok "python3 ${PY_VER}"
+
+# Node 20+ check. Sidekick proxy uses experimental TypeScript stripping
+# (--experimental-strip-types) which lands stably in Node 22, but is
+# usable from 20+. We do not pin a specific minor — whatever the user
+# has on PATH that is >=20 works. If you need a managed Node, install
+# nvm or fnm yourself; we deliberately don't manage Node for you.
+if ! command -v node >/dev/null 2>&1; then
+  fail "node not on PATH. Install Node 20+ (recommend nvm: https://github.com/nvm-sh/nvm)."
+fi
+NODE_VER="$(node -v 2>/dev/null | sed 's/^v//')"
+NODE_MAJ="${NODE_VER%%.*}"
+if (( NODE_MAJ < 20 )); then
+  fail "node is v${NODE_VER}, need >=20 for the sidekick proxy. Upgrade (e.g. via nvm: 'nvm install 22 && nvm use 22')."
+fi
+ok "node v${NODE_VER}"
 
 # ── 2. Prompt for config ─────────────────────────────────────────────
 # We persist answers as a side-effect of writing them into ~/.hermes/.env
@@ -220,8 +235,8 @@ prompt_secret  TAVILY_API_KEY      "Tavily API key (for web_search, optional)"
 
 # ── 3. Sidekick clone ────────────────────────────────────────────────
 # The PWA + audio bridge live in a separate public repo. We clone as a
-# sibling directory rather than as a submodule so Tom can pull updates
-# independently of the workflow framework version.
+# sibling directory rather than as a submodule so the user can pull
+# updates independently of the workflow framework version.
 section "Sidekick"
 
 if [[ -d "${SIDEKICK_PATH}/.git" ]]; then
@@ -364,6 +379,97 @@ else
   warn "audio-bridge dir not found at ${AUDIO_BRIDGE_DIR} — skipping"
 fi
 
+# ── 5b. Hindsight client (in the hermes-agent venv) ──────────────────
+# The hindsight memory plugin (plugins/memory/hindsight in upstream
+# hermes-agent) imports `hindsight_client`. That dep is on PyPI as
+# `hindsight-client`, distinct from the server's `hindsight-api-slim`
+# we install above. The plugin has a runtime auto-upgrade path, but it
+# can only fire AFTER the package is importable — first install has to
+# happen out-of-band. Without this step, hindsight memory writes
+# silently fall back to "broken locally" with
+# `ModuleNotFoundError: No module named 'hindsight_client'`.
+section "Hindsight client"
+
+if [[ -x "${HERMES_VENV}/bin/python" ]]; then
+  if "${HERMES_VENV}/bin/python" -c 'import hindsight_client' 2>/dev/null; then
+    ok "hindsight-client already importable in ${HERMES_VENV}"
+  else
+    info "installing hindsight-client into ${HERMES_VENV}"
+    uv pip install --python "${HERMES_VENV}/bin/python" 'hindsight-client>=0.4.22'
+    ok "hindsight-client installed"
+  fi
+else
+  warn "${HERMES_VENV} not present — skip hindsight-client install"
+fi
+
+# ── 5c. Claude-Code memory dir (with resume protocol) ────────────────
+# Each host's claude-code memory dir lives under hosts/<host>/claude-code-memory/
+# in the workflow repo. We seed it from templates/claude-code-memory/
+# (RESUME.md stub + feedback_resume_protocol.md) so a fresh-host claude
+# session resume reads the protocol on day one. Then we symlink the
+# live ~/.claude/projects/<encoded-cwd>/memory dir at it so memory
+# writes from the running session land back in the repo.
+section "Claude Code memory + resume protocol"
+
+HOST_MEMORY_DIR="${REPO}/hosts/${HOST_NAME}/claude-code-memory"
+TEMPLATE_MEMORY_DIR="${REPO}/templates/claude-code-memory"
+mkdir -p "${HOST_MEMORY_DIR}"
+
+# Seed RESUME.md stub if missing. The protocol expects this file to
+# exist on session resume; without it the discipline can't bootstrap.
+if [[ ! -f "${HOST_MEMORY_DIR}/RESUME.md" && -f "${TEMPLATE_MEMORY_DIR}/RESUME.md" ]]; then
+  cp "${TEMPLATE_MEMORY_DIR}/RESUME.md" "${HOST_MEMORY_DIR}/RESUME.md"
+  ok "seeded ${HOST_MEMORY_DIR}/RESUME.md"
+fi
+
+# Seed the resume-protocol feedback file if missing.
+if [[ ! -f "${HOST_MEMORY_DIR}/feedback_resume_protocol.md" \
+      && -f "${TEMPLATE_MEMORY_DIR}/feedback_resume_protocol.md" ]]; then
+  cp "${TEMPLATE_MEMORY_DIR}/feedback_resume_protocol.md" \
+     "${HOST_MEMORY_DIR}/feedback_resume_protocol.md"
+  ok "seeded ${HOST_MEMORY_DIR}/feedback_resume_protocol.md"
+fi
+
+# Ensure MEMORY.md indexes the protocol entries. If MEMORY.md doesn't
+# exist, create it with just those entries; otherwise prepend.
+MEMORY_INDEX="${HOST_MEMORY_DIR}/MEMORY.md"
+PROTOCOL_LINES=$'- [RESUME — read FIRST on any resume](RESUME.md) — Live state of the in-flight conversation, refreshed each meaningful turn. May be missing on a brand-new session — if so, create one. If its timestamp is stale, also tail the `.jsonl` it points at for verbatim context.\n- [Resume protocol — keep RESUME.md current](feedback_resume_protocol.md) — After each meaningful exchange, refresh `RESUME.md` before responding. That\'s the discipline that makes mid-session crash recovery work.\n'
+if [[ ! -f "${MEMORY_INDEX}" ]]; then
+  printf '%s' "${PROTOCOL_LINES}" > "${MEMORY_INDEX}"
+  ok "seeded MEMORY.md with resume protocol entries"
+elif ! grep -q '\[RESUME ' "${MEMORY_INDEX}" 2>/dev/null; then
+  TMP_MEM="$(mktemp)"
+  printf '%s' "${PROTOCOL_LINES}" > "${TMP_MEM}"
+  cat "${MEMORY_INDEX}" >> "${TMP_MEM}"
+  mv "${TMP_MEM}" "${MEMORY_INDEX}"
+  ok "prepended resume protocol pointers to MEMORY.md"
+fi
+
+# Symlink ~/.claude/projects/<encoded-cwd>/memory at the host memory
+# dir. Claude Code encodes the project cwd by replacing '/' with '-',
+# so a checkout at ${REPO} becomes "$(echo "${REPO}" | tr '/' '-')".
+# We also cover the $HOME-launched encoding (for users who run
+# claude-remote from $HOME — see scripts/setup-remote-claude.sh).
+encoded_repo="$(echo "${REPO}" | tr '/' '-')"
+encoded_home="$(echo "${HOME}" | tr '/' '-')"
+CLAUDE_PROJECT_PARENTS=(
+  "${HOME}/.claude/projects/${encoded_repo}"
+  "${HOME}/.claude/projects/${encoded_home}"
+)
+for parent in "${CLAUDE_PROJECT_PARENTS[@]}"; do
+  [[ -d "${parent}" || -L "${parent}" ]] || continue
+  live_memory="${parent}/memory"
+  if [[ -L "${live_memory}" ]]; then
+    continue
+  fi
+  if [[ -d "${live_memory}" && ! -L "${live_memory}" ]]; then
+    warn "${live_memory} is a regular dir, not a symlink — leaving alone (manual migration needed)"
+    continue
+  fi
+  ln -s "${HOST_MEMORY_DIR}" "${live_memory}"
+  ok "symlinked ${live_memory} → ${HOST_MEMORY_DIR}"
+done
+
 # ── 6. systemd user units ────────────────────────────────────────────
 # Generate per-user units from templates by substituting placeholders.
 # We deliberately don't enable --now here; smoke-test step starts them
@@ -404,16 +510,43 @@ render_unit() {
 render_unit "systemd/hermes-gateway.service"   "hermes-gateway.service"
 render_unit "systemd/hermes-dashboard.service" "hermes-dashboard.service"
 render_unit "systemd/hindsight-server.service" "hindsight-server.service"
-# Optional fourth unit — sidekick audio bridge. Lives in sidekick repo
-# but Tom may want a workflow-managed copy too.
-render_unit "systemd/sidekick-audio.service"   "sidekick-audio.service"
+
+# Sidekick audio bridge unit lives in the sidekick checkout, not in
+# this workflow repo (so sidekick can ship breaking changes to the unit
+# without requiring a workflow-repo bump). Symlink the file from the
+# sidekick clone into ~/.config/systemd/user/ so systemctl picks it up
+# alongside the workflow units. We do NOT render placeholders into it —
+# the upstream unit uses systemd's %h specifier which already expands to
+# $HOME at unit-load time, so it works as-is across hosts.
+SIDEKICK_AUDIO_SRC="${SIDEKICK_PATH}/audio-bridge/sidekick-audio.service"
+SIDEKICK_AUDIO_DST="${SYSTEMD_DST}/sidekick-audio.service"
+if [[ -f "${SIDEKICK_AUDIO_SRC}" ]]; then
+  if [[ -L "${SIDEKICK_AUDIO_DST}" ]]; then
+    current="$(readlink "${SIDEKICK_AUDIO_DST}")"
+    if [[ "${current}" != "${SIDEKICK_AUDIO_SRC}" ]]; then
+      rm "${SIDEKICK_AUDIO_DST}"
+      ln -s "${SIDEKICK_AUDIO_SRC}" "${SIDEKICK_AUDIO_DST}"
+      ok "relinked ${SIDEKICK_AUDIO_DST} → ${SIDEKICK_AUDIO_SRC}"
+    else
+      ok "${SIDEKICK_AUDIO_DST} already linked"
+    fi
+  elif [[ -e "${SIDEKICK_AUDIO_DST}" ]]; then
+    warn "${SIDEKICK_AUDIO_DST} is a regular file (not a symlink) — leaving as-is"
+  else
+    ln -s "${SIDEKICK_AUDIO_SRC}" "${SIDEKICK_AUDIO_DST}"
+    ok "linked ${SIDEKICK_AUDIO_DST} → ${SIDEKICK_AUDIO_SRC}"
+  fi
+else
+  warn "sidekick audio-bridge unit not found at ${SIDEKICK_AUDIO_SRC} — skipping"
+fi
 
 systemctl --user daemon-reload
 ok "systemctl --user daemon-reload"
 
 # ── 7. Secrets → .env ────────────────────────────────────────────────
-# We append rather than overwrite — Tom may have other env vars in there
-# from a prior run or manual edit. chmod 600 every time defensively.
+# We append rather than overwrite — the user may have other env vars
+# in there from a prior run or manual edit. chmod 600 every time
+# defensively.
 section "Secrets"
 
 ENV_FILE="${HERMES_HOME}/.env"
@@ -469,6 +602,33 @@ if command -v tmux >/dev/null 2>&1 && command -v claude >/dev/null 2>&1; then
 else
   warn "tmux or claude (Claude Code CLI) not on PATH — skipping claude-remote setup."
   warn "  Re-run scripts/setup-remote-claude.sh once both are installed."
+fi
+
+# ── 7d. Cron entries (idempotent) ────────────────────────────────────
+# Install a small set of cron jobs that keep the on-disk runtime tidy:
+#   - prune-claude-cc-history.sh: nightly trim of Claude Code .jsonl
+#     transcripts older than 30d (they accumulate unbounded otherwise;
+#     a single active session is multiple MB).
+# More crons (e.g. periodic doctor.sh, sync jobs) can be added by the
+# user as needed — this is the conservative starter set.
+section "Cron"
+
+add_cron() {
+  local pattern="$1" line="$2"
+  if crontab -l 2>/dev/null | grep -qF "${pattern}"; then
+    ok "cron already has: ${pattern}"
+    return
+  fi
+  (crontab -l 2>/dev/null; echo "${line}") | crontab -
+  ok "added cron: ${pattern}"
+}
+
+mkdir -p "${HERMES_HOME}/logs"
+if command -v crontab >/dev/null 2>&1; then
+  add_cron "prune-claude-cc-history.sh" \
+    "44 4 * * * ${REPO}/scripts/prune-claude-cc-history.sh >> ${HERMES_HOME}/logs/prune-claude-cc-history.log 2>&1"
+else
+  warn "crontab not on PATH — skipping cron install (run scripts/prune-claude-cc-history.sh manually as needed)"
 fi
 
 # ── 8. Smoke-test ────────────────────────────────────────────────────
