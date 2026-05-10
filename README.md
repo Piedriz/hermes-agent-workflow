@@ -1,38 +1,285 @@
 # hermes-agent-workflow
 
 A public template for deploying a personal AI assistant stack
-(hermes-agent + sidekick PWA + audio bridge) on your own hardware.
+(hermes-agent + sidekick PWA + audio bridge) on your own hardware,
+**with your full agent state versioned in your own private fork** —
+encrypted, snapshotted, and restorable on a fresh machine.
 
 Early, working, opinionated. Not a polished product.
 
-## What you get
+---
 
-- **hermes-agent** — the [Nous Research](https://github.com/NousResearch/hermes-agent) Python agent runtime (skills, memory, gateway).
-- **sidekick** — a [Progressive Web App (PWA)](https://en.wikipedia.org/wiki/Progressive_web_app) frontend with a Bun proxy and a Python audio bridge for WebRTC voice. Lives in its own repo at [`github.com/jscholz/sidekick`](https://github.com/jscholz/sidekick); this template wires it up.
-- **hindsight** — a local memory backend (Postgres + a small FastAPI server) that hermes recalls against.
-- **systemd user units** — for the gateway, hindsight server, sidekick proxy, and audio bridge.
-- **doctor + sync scripts** — health checks, symlink integrity, optional cron-driven backup of agent state to your fork.
-- **`claude-remote` workflow** — a tmux + Claude Code remote-control shell function that lets you drive your agent from claude.ai (web or iOS) on your phone, with warm-start context loaded from a hand-curated `claude-session-history.md` in your fork.
-- **sample skills, configs, and an `AGENTS.md`** — sensible defaults you can edit in place.
+## §1 — What is this?
 
-## Quickstart
+A turnkey workflow for running [`hermes-agent`](https://github.com/NousResearch/hermes-agent)
++ [`sidekick`](https://github.com/jscholz/sidekick) on your own box,
+where your fork of *this* repo holds:
 
-Have `claude` (Claude Code) and `git` on your `$PATH`? One line:
+- The hermes config + system prompt + AGENTS hint-file
+- Your accumulated **memories** (what hermes recalls about you)
+- Your **skills** tree (vendored upstream + your edits + agent-authored skills)
+- Your **encrypted secrets** (`.env`, OAuth tokens, WhatsApp session)
+- Your **encrypted state backups** (sqlite session/message history,
+  hindsight memory bank dump) on a daily cron
+- Per-host overrides under `hosts/<your-host>/`
 
-```bash
-curl -fsSL https://raw.githubusercontent.com/jscholz/hermes-agent-workflow/main/install.sh | bash
+`scripts/bootstrap.sh` lays a symlink tree at `~/.hermes/` that
+points back into your fork. From that point on, `git push` from any
+machine snapshots the agent's full state; `git clone` + bootstrap on
+a new machine restores it. Lose the hardware, get it back.
+
+---
+
+## §2 — What gets versioned in your fork
+
+This is the load-bearing table. Read it carefully — anything not
+listed here is **not** in your backup. The columns:
+
+- **Path** — where it lives in your fork.
+- **Symlinked to** — where in `~/.hermes/` the live copy is, after
+  bootstrap.
+- **Encrypted** — yes if covered by a `.gitattributes` rule, no
+  otherwise.
+- **Scope** — `shared` if used by every host, `per-host` if scoped
+  under `hosts/<host>/`.
+
+| Path                                  | Symlinked to                          | Encrypted | Scope    | Notes |
+| ------------------------------------- | ------------------------------------- | --------- | -------- | ----- |
+| `config.yaml` (from `example.config.yaml`) | `~/.hermes/config.yaml`           | no        | shared   | Hermes runtime config: model, platform_toolsets, gateway, voice. |
+| `AGENTS.md` (from `example.AGENTS.md`)| `~/.hermes/AGENTS.md`                 | no        | shared   | Tool-routing hints the running agent reads each session. Edit freely. |
+| `SOUL.md` (from `SOUL.md.template`)   | `~/.hermes/SOUL.md`                   | no        | shared   | Your agent's persona / system-prompt prefix. |
+| `hindsight/config.json` (from `example.hindsight.config.json`) | `~/.hermes/hindsight/config.json` | no | shared | Local hindsight client config. |
+| `memories/`                           | `~/.hermes/memories/`                 | no        | shared   | Append-only memory store the agent grows. Plaintext on purpose so you can read + curate. |
+| `skills/`                             | `~/.hermes/skills/`                   | no        | shared   | Skills tree. Vendored upstream snapshot + your edits + agent-authored skills. See §4. |
+| `cron/`                               | `~/.hermes/cron/`                     | no        | shared   | Hermes's own cron entries. |
+| `hooks/`                              | `~/.hermes/hooks/`                    | no        | shared   | Pre/post-turn hooks. |
+| `plugins/`                            | `~/.hermes/plugins/`                  | no        | shared   | Hermes plugins. |
+| `workspace/`                          | (referenced from skills, not symlinked into `~/.hermes/`) | optional | shared | Personal documents the agent reads/writes. Add to `.gitattributes` if you want it encrypted. |
+| `.env`                                | `~/.hermes/.env`                      | **yes**   | shared   | API keys (OpenRouter, Deepgram, Tavily, Anthropic). |
+| `auth.json`                           | `~/.hermes/auth.json`                 | **yes**   | shared   | Sidekick / hermes auth state. |
+| `google_client_secret.json`           | `~/.hermes/google_client_secret.json` | **yes**   | shared   | Google OAuth client (if you wire up Gmail / Calendar). |
+| `google_token.json`                   | `~/.hermes/google_token.json`         | **yes**   | shared   | Google OAuth refresh tokens. |
+| `whatsapp/session/**`                 | `~/.hermes/whatsapp/session/`         | **yes**   | shared   | Baileys session credentials. Losing these means QR-rescan from the phone. |
+| `pairing/**`                          | `~/.hermes/pairing/`                  | **yes**   | shared   | Sidekick PWA pairing tokens. |
+| `hindsight-data/dump.sql`             | (restore target: hindsight Postgres)  | **yes**   | shared   | Daily `pg_dump` of the hindsight memory bank. See §5. |
+| `hermes-data/state.sql`               | (restore target: `~/.hermes/state.db`) | **yes**  | shared   | Daily sqlite dump of `state.db` (sessions, messages, schema_version, state_meta). See §5. |
+| `hosts/<host>/claude-code-memory/`    | `~/.claude/projects/<proj>/memory/`   | no        | per-host | Per-host Claude Code memory dir, including `RESUME.md`. |
+| `hosts/<host>/claude-code-history/`   | (snapshotted from `~/.claude/projects/<proj>/*.jsonl`) | no | per-host | Compressed Claude Code session transcripts. Pruned on a cron. |
+| `ACTIVE_HOST`                         | (sentinel — not symlinked)            | no        | shared   | Which host is the current writer (see §7). |
+
+**Two design choices baked into this table:**
+
+1. **Memories live in plaintext, secrets and state-dumps live encrypted.**
+   Memories are content you want to read, edit, and curate from any
+   editor. Secrets and bulk state dumps are content you only want a
+   machine to read.
+2. **The symlink layout is one-tier.** `~/.hermes/skills/` IS your
+   fork's `skills/` directory — not a writable user copy that
+   shadows a read-only catalog. This means edits the agent makes at
+   runtime land directly in your fork's working tree. See §3.
+
+---
+
+## §3 — The symlink pattern
+
+`hermes-agent` is a Python package. Installed normally, mutable user
+state — your skills, memories, config, OAuth tokens — accumulates in
+`~/.hermes/` alongside the package's installed files. That makes
+"version my agent state" awkward: you don't want to version the
+whole install, just your data within it. And you don't want
+`pip install -U` quietly overwriting a memory you've curated.
+
+This template solves it with a symlink tree. After `scripts/bootstrap.sh`
+runs:
+
+```
+~/.hermes/
+├── config.yaml          → <repo>/config.yaml
+├── AGENTS.md            → <repo>/AGENTS.md
+├── SOUL.md              → <repo>/SOUL.md
+├── memories/            → <repo>/memories/         (real dir)
+├── skills/              → <repo>/skills/           (real dir)
+├── cron/                → <repo>/cron/             (real dir)
+├── hooks/               → <repo>/hooks/            (real dir)
+├── plugins/             → <repo>/plugins/          (real dir)
+├── whatsapp/            → <repo>/whatsapp/         (real dir, encrypted)
+├── pairing/             → <repo>/pairing/          (real dir, encrypted)
+├── .env                 → <repo>/.env              (encrypted)
+├── auth.json            → <repo>/auth.json         (encrypted)
+├── hindsight/config.json → <repo>/hindsight/config.json
+└── state.db             ← live sqlite, NOT symlinked (see §5 + §6)
 ```
 
-That clones this repo to `~/code/hermes-agent-workflow` and opens
-Claude Code in it. From there, `AGENTS.md` takes over: it walks you
-through forking to your own private repo, runs `scripts/bootstrap.sh`
-(which prompts for API keys, host name, lat/lon, agent backend),
-clones sidekick into `~/code/sidekick/`, builds `uv` venvs, drops
-systemd user units into place, and smoke-tests the chain. When it's
-done, `https://<host>.local` serves the sidekick PWA and you're
-talking to your agent.
+Three helpers in `bootstrap.sh` build this:
 
-Manual variant (no curl, no Claude Code in the loop):
+- `link_template <src.example> <dst>` — for files where the repo
+  ships a `*.example` template and the live file becomes a symlink
+  pointing back to the example after first install. Edits flow back
+  into your fork.
+- `link_dir <src> <dst>` — for whole directories. The repo dir is
+  the live dir.
+- `link_secret <src> <dst>` — for git-crypt-protected files. Same
+  semantics as `link_template` but no-op until the file exists, so
+  bootstrap doesn't fail before you've added secrets.
+
+If you re-run bootstrap after upstream changes, existing symlinks
+are left in place; new ones from new entries get added. Idempotent.
+
+---
+
+## §4 — Skills_sync: how upstream skill upgrades land safely
+
+Because `skills/` is your own directory (you edit it; the agent
+edits it), upstream skill upgrades can't just blast in. They go
+through `tools/skills_sync.py`, which ships with hermes-agent and
+runs as part of `hermes update`.
+
+The mechanism, briefly:
+
+1. Every install records a `.bundled_manifest` at `~/.hermes/skills/.bundled_manifest`
+   — a per-skill MD5 of what was bundled with hermes-agent at last sync.
+2. When upstream ships new skill content (a `pip install -U
+   hermes-agent` brings in a new bundled snapshot under the package
+   dir), `skills_sync.py` walks each skill and asks:
+   - **New skill** (not in your tree at all)? Copy it in.
+   - **Existing skill, hash matches the bundled manifest?** You haven't
+     touched it. Refresh from the new bundled version.
+   - **Existing skill, hash differs?** You've customized it. **Skip.**
+     Your version stays. Upstream's is logged but not applied.
+3. Skill-authored content (skills the agent itself wrote at runtime)
+   is invisible to upstream — it's just in your tree, not in any
+   manifest, never overwritten.
+
+There is **no line-level merge**. The granularity is whole-skill.
+Conservative-by-design — if you've edited a skill, you keep it
+verbatim until you decide to reconcile manually.
+
+The flip side: if you want upstream's *new* version of a skill you
+previously customized, you have to merge it in by hand (or revert
+your customizations and let `skills_sync` re-pull it on the next
+upgrade). The script's job is to never *destroy* your work, not to
+auto-resolve every case.
+
+---
+
+## §5 — Encrypted backup model
+
+Three things in your install are too big to live in your repo as
+ordinary files but too important to lose: the **hindsight memory
+bank** (Postgres), the **hermes state.db** (sqlite — sessions,
+messages, FTS indexes), and **agent secrets** (`.env`, OAuth tokens,
+WhatsApp session). The model:
+
+| Asset                    | How it's captured           | Where it lands           | Cron                              | Restore script |
+| ------------------------ | --------------------------- | ------------------------ | --------------------------------- | -------------- |
+| Hindsight Postgres DB    | `pg_dump`                   | `hindsight-data/dump.sql` (encrypted) | `cron/sync-hindsight-bank.cron.example` | `scripts/restore-hindsight-bank.sh` |
+| `~/.hermes/state.db`     | `.backup` (atomic) → `.dump sessions messages schema_version state_meta` | `hermes-data/state.sql` (encrypted) | `cron/sync-hermes-state.cron.example` | `scripts/restore-hermes-state.sh` |
+| Live secrets             | symlinked into repo         | `.env`, `auth.json`, etc. (encrypted) | (instant — every git push) | git pull |
+
+Both daily-dump crons are **off by default**. Opt in by:
+
+1. Confirming you've initialized git-crypt (you can't push
+   meaningful encrypted backups without it).
+2. Confirming `git push` from cron actually works (SSH agent
+   forwarding or a deploy key — cron is non-interactive).
+3. Editing `cron/*.cron.example`, replacing `REPO_PATH` with your
+   absolute clone path, and adding the line via `crontab -e`.
+
+The `prune-hermes-state-history.sh` script keeps the encrypted
+history small — dilated-strided sample (daily for a week, weekly
+for a month, monthly for a year, yearly forever) via
+`git-filter-repo`. Roughly ~50KB-1MB of encrypted churn per active
+day; the prune keeps total backup history under 10MB on a
+multi-year horizon.
+
+**Restore on a fresh machine** is a single sequence:
+
+```bash
+git clone <your-fork>
+cd <your-fork>
+echo '<base64-key>' | base64 -d | git-crypt unlock -
+./scripts/bootstrap.sh        # rebuilds the symlink tree
+./scripts/restore-hermes-state.sh --yes   # replays state.sql
+./scripts/restore-hindsight-bank.sh       # replays hindsight dump.sql
+```
+
+`bootstrap.sh` writes a sentinel at `~/.hermes/.bootstrap.complete`
+so re-runs and Claude-driven installs can detect prior state.
+
+---
+
+## §6 — What does NOT get versioned
+
+By design, several things are excluded from your fork:
+
+- **Live `~/.hermes/state.db`** — too big, written every turn,
+  derivable from `hermes-data/state.sql` plus replay. The dump
+  captures the conversation tables; FTS5 indexes are rebuilt by
+  `restore-hermes-state.sh`.
+- **`~/.hermes/cache/` and `~/.hermes/logs/`** — derivable.
+- **`~/.hermes/kanban.db`, `~/.hermes/response_store.db`** —
+  per-host scratch state. Restore would be wrong, not just
+  unnecessary.
+- **Live hindsight Postgres data dir** — restored from the dump,
+  not the data files.
+- **`~/.hermes/hermes-agent/` (the installed package)** — `pip
+  install -U hermes-agent` is the source of truth.
+- **Sidekick `node_modules/` / `bun.lockb` / `dist/`** — built on
+  install.
+- **Claude Code `.jsonl` transcripts older than the prune horizon**
+  — kept compressed in `hosts/<host>/claude-code-history/` for
+  ~30 days, pruned after.
+
+If you find a host file you want versioned that's not on the list,
+add a `.gitattributes` rule (encryption optional) and a
+`link_template` / `link_dir` call in `bootstrap.sh`.
+
+---
+
+## §7 — Multi-host parity (v1 = single ACTIVE_HOST)
+
+The repo includes an `ACTIVE_HOST` sentinel at the repo root with a
+single line:
+
+```
+active_host=<hostname>
+```
+
+Sync scripts (`sync-hermes-state.sh`, `sync-hindsight-bank.sh`)
+**refuse to run on any host where `$(hostname)` doesn't match**.
+This prevents two machines from racing on the same backup branch
+and producing merge conflicts in encrypted blobs (which are
+miserable to resolve).
+
+The intended pattern in v1: one machine is "live," others are cold
+spares. To switch active hosts, edit `ACTIVE_HOST`, commit, push,
+pull on the new host, run `restore-hermes-state.sh`, restart
+hermes-gateway. Concurrent multi-host (sync deltas, hindsight
+sharded by host, etc.) is a v2 problem.
+
+---
+
+## §8 — Installation
+
+**Recommended path: ask your local Claude Code to install for you.**
+
+```bash
+# from a machine with `claude` (Claude Code) on $PATH
+mkdir -p ~/code && cd ~/code
+git clone https://github.com/jscholz/hermes-agent-workflow.git
+cd hermes-agent-workflow
+claude
+> install this for me
+```
+
+Claude reads [`CLAUDE.md`](./CLAUDE.md) — the install conductor — and
+walks you through everything: prerequisites check, fork creation,
+git-crypt init/unlock, secrets prompts, `scripts/bootstrap.sh`
+invocation, doctor verification, optional sidekick + claude-remote +
+daily-dump cron. Each step probes state first, asks before doing
+anything destructive, and is safe to interrupt and resume.
+
+**Manual path** (no Claude in the loop):
 
 ```bash
 git clone https://github.com/jscholz/hermes-agent-workflow.git
@@ -40,101 +287,74 @@ cd hermes-agent-workflow
 ./scripts/bootstrap.sh
 ```
 
-Read the script first; it's short.
+`bootstrap.sh` is the workhorse either way — Claude just gathers
+inputs and invokes it with `--env-file`. Read the script first;
+it's commented.
 
-## Why fork instead of just using upstream
+---
 
-The repo is a **framework + instance** template. Your fork is your
-instance — `hermes.config.yaml`, `AGENTS.md`, `SOUL.md`, memories,
-custom skills, and encrypted secrets all live there and never leave
-it. Versioning your fork is also your disaster-recovery story: lose
-the hardware, get a new machine, clone, run bootstrap, you're back —
-including accumulated agent memory and any tweaks you'd made.
+## §9 — Updating
 
-You pull updates from this repo as upstream when you want them. See
-[`CONTRIBUTING.md`](./CONTRIBUTING.md) for the framework/instance file
-ownership rules and the contribution workflow.
-
-## Why everything lives in your fork (the symlink pattern)
-
-`hermes-agent` is a Python package. If you install it via `pip` the
-ordinary way, mutable user state — your skills, your accumulated
-memories, your config, OAuth tokens — accumulates in `~/.hermes/`,
-alongside the package's own files. That makes "version my agent
-state" awkward: you don't want to version the whole install, just
-your data within it. And you definitely don't want a `pip install -U`
-quietly overwriting a memory you've curated for months.
-
-This template solves that with a symlink pattern. The bootstrap
-wizard sets up `~/.hermes/` as a tree of symlinks pointing into your
-fork of this repo. Edits to skills, configs, or accumulated memories
-all land in your repo's directories. `git push` snapshots your full
-agent state; `git clone` + `bootstrap.sh` on a new machine restores
-it.
-
-Concretely:
-
-- The `skills/` tree in this repo is the live skills directory the
-  installed agent reads from. Editing a skill here = editing what the
-  running agent uses, immediately.
-- Your private fork's `memories/` is what the agent recalls against.
-  It grows as the agent learns about you.
-- `hosts/<your-host>/` captures per-machine state (Claude Code session
-  transcripts, host-local memory snapshots) so multi-machine setups
-  don't stomp each other.
-
-Net effect: one `git push` from any machine snapshots that machine's
-full agent state. One `git clone` + `bootstrap.sh` on new hardware
-restores it.
-
-## Updating hermes-agent
-
-Because skills are versioned in your fork, `pip install -U
-hermes-agent` no longer auto-updates them — your repo is the source
-of truth. Upstream skill improvements come in via a vendor-branch +
-3-way merge: git auto-adopts upstream changes where you haven't
-customized, preserves your edits where upstream didn't change, and
-surfaces conflicts only on true overlap. See
-[`UPGRADES.md`](./UPGRADES.md) for the procedure.
-
-## Encrypted secrets (git-crypt)
-
-Your fork carries real secrets — API keys, OAuth credentials, WhatsApp
-session state, the hindsight memory bank dump. To make `git push` to
-GitHub safe (even on a "private" repo, where future-you on a different
-account or a future collaborator might see the history), those files
-are **encrypted at rest** in git history via
-[`git-crypt`](https://github.com/AGWA/git-crypt).
-
-Files matching the patterns in `.gitattributes` — `.env`, `auth.json`,
-`google_*.json`, `whatsapp/session/**`, `pairing/**`,
-`hindsight-data/**` — appear plaintext in your working tree once the
-repo is unlocked, but ciphertext in every commit. Anything not listed
-is committed plaintext as usual.
-
-**First-time setup, on your first install machine:**
+To pick up upstream changes to this template:
 
 ```bash
-git-crypt init
-git-crypt export-key /tmp/hermes-key   # writes the symmetric key
-base64 /tmp/hermes-key                  # save THIS string in a password
-                                        # manager + an offline backup
-shred -u /tmp/hermes-key
+cd ~/code/hermes-agent-workflow
+git fetch upstream
+git merge upstream/main
+./scripts/bootstrap.sh        # idempotent — adds new symlinks, leaves existing
 ```
 
-**Restoring on a fresh machine:**
+To pick up a new hermes-agent version (and bring in new bundled
+skills via `skills_sync`):
 
 ```bash
-git clone <your-fork>
-cd <your-fork>
-echo '<base64-key>' | base64 -d | git-crypt unlock -
+hermes update       # or whatever your package manager calls it
+# this triggers tools/skills_sync.py against ~/.hermes/skills/
+git status          # see what changed
 ```
 
-If you lose the key, the encrypted history is unrecoverable. Back it
-up in **at least two independent places** — password manager, paper,
-offline drive. Adding new file patterns to `.gitattributes` only
-encrypts files committed after the change; rotating the key is a full
-re-encrypt of history, doable but disruptive.
+Review the diff. Skills you'd customized are preserved (§4); new
+upstream skills appear; refreshes to skills you never touched are
+auto-adopted. Commit + push to your fork.
+
+See [`CONTRIBUTING.md`](./CONTRIBUTING.md) for the framework /
+instance file ownership rules and the upstream-PR workflow.
+
+---
+
+## §10 — Troubleshooting
+
+**`git-crypt unlock` says "this repo is not encrypted"** — you're
+on a fresh fork that nobody's ever run `git-crypt init` on. That's
+fine; secrets just aren't encrypted yet. Run `git-crypt init`
+yourself, export + back up the key, then add secrets.
+
+**`bootstrap.sh` complains about a missing template** — likely
+your fork is behind upstream. `git fetch upstream && git merge
+upstream/main` and re-run.
+
+**`doctor.sh` reports a broken symlink under `~/.hermes/`** —
+either bootstrap didn't finish, or the target file got deleted.
+`rm ~/.hermes/<broken-link>` and re-run bootstrap; it'll re-link.
+
+**State backup cron isn't pushing** — cron has no SSH agent. Either
+configure a deploy key for your fork, or arrange `ssh-agent` such
+that the cron user can `git push` non-interactively. Test with
+`bash -lc 'cd <repo> && git push'` from a non-login shell first.
+
+**Hermes gateway won't start** — `journalctl --user -u
+hermes-gateway -n 100 --no-pager`. Most common: missing API key in
+`~/.hermes/.env`, or git-crypt not unlocked so `.env` is still
+ciphertext.
+
+**Restored state.db has empty FTS results** — `restore-hermes-state.sh`
+rebuilds the FTS5 indexes; if you imported state.sql by hand,
+re-run that script with `--yes` (idempotent).
+
+For anything else: open an issue with `doctor.sh` output and a
+sanitized snippet of the failing logs.
+
+---
 
 ## Architecture
 
@@ -157,85 +377,51 @@ re-encrypt of history, doable but disruptive.
 - **sidekick** is the user-facing surface: PWA, Bun-served proxy at
   `/api/hermes/*`, and an aiortc audio bridge for low-latency voice
   in/out via Deepgram.
-- **hermes-agent** runs the actual agent loop, skills, and tool calls.
-  It exposes the OpenAI-compatible `/v1/responses` interface that
-  sidekick speaks to.
+- **hermes-agent** runs the actual agent loop, skills, and tool
+  calls. It exposes the OpenAI-compatible `/v1/responses` interface
+  that sidekick speaks to.
 - **hindsight** stores recallable memory; hermes calls it as a skill.
-- **This repo** is the glue: config, systemd units, vendored skills,
-  the bootstrap wizard, and per-host overrides under `hosts/<host>/`.
+- **This repo** is the glue: config, systemd units, the bootstrap
+  wizard, encrypted backup scripts, and per-host overrides under
+  `hosts/<host>/`.
 
-For deeper detail on each piece, follow the upstream links — this repo
-deliberately doesn't restate them.
-
-## What the sidekick PWA gives you
-
-Once the deployment is up, the PWA at `https://<host>.local` is the
-day-to-day surface. A few capabilities worth flagging — see the
-[sidekick repo](https://github.com/jscholz/sidekick) for the full
-story:
-
-- **Cross-platform session visibility.** The chat drawer shows every
-  conversation hermes is tracking — telegram, slack, whatsapp, signal,
-  etc. — alongside sidekick chats, with a per-row source badge. Useful
-  for monitoring multi-channel agent activity from one pane. The
-  composer is read-only when viewing a non-sidekick chat (sidekick
-  can't currently send to other platforms).
-- **Live drawer updates.** Cross-platform chats refresh via a 5s poll
-  while the PWA is foregrounded, plus an immediate refresh on
-  tab-focus. Sidekick-owned chats stay live via SSE as before.
-- **Web search via Tavily.** When `TAVILY_API_KEY` is set in
-  `~/.hermes/.env`, hermes's `web_search` / `web_extract` tools work
-  out of the box. See "Requirements" below.
-- **Lazy chat creation.** "New chat" no longer mints an empty stub —
-  the chat materializes on first send, so the drawer never shows
-  empty rows.
-- **Atomic send with retry.** If a send fails to reach the agent, the
-  bubble flips to a `.failed` state with Retry / Dismiss controls
-  rather than leaving a delivered-looking message that never landed.
-- **First-message snippet fallback.** Drawer rows show a snippet of
-  the first user message until hermes generates a real title.
+---
 
 ## Requirements
 
 - **OS**: Linux (Pi 5 / Ubuntu / Debian validated). macOS support is
-  pending — aiortc + ffmpeg should install cleanly via Homebrew, but
-  end-to-end validation hasn't happened yet. File issues.
+  pending.
 - **Python**: 3.11 or newer.
-- **`uv`**: install from [astral.sh/uv](https://docs.astral.sh/uv/).
-- **`git`**, **`ffmpeg`**, **`tmux`**, and **`git-crypt`** (for encrypted secrets — see "Encrypted secrets" below) on `$PATH`. The curl installer will check for these and tell you how to install any that are missing; the rest of the installer is idempotent so you can re-run it after.
-- **Bun**: for the sidekick proxy. Install from [bun.sh](https://bun.sh).
-- **API keys**:
-  - **Deepgram** for STT/TTS in the audio bridge.
-  - An **LLM provider key** — OpenRouter, Anthropic, OpenAI, or a
-    local backend; configure per `hermes.config.yaml`.
-  - **Tavily** (optional) — set `TAVILY_API_KEY` in `~/.hermes/.env`
-    to enable hermes's `web_search` / `web_extract` tools. Free tier
-    is 1000 requests/month; sign up at [tavily.com](https://tavily.com).
-    Without it, `web_search` is a no-op.
+- **Node**: 20 or newer (sidekick proxy, claude-code).
+- **Bun** (sidekick proxy): [bun.sh](https://bun.sh).
+- **`uv`**, **`git`**, **`git-crypt`**, **`gh`**, **`ffmpeg`**,
+  **`tmux`** on `$PATH`. The bootstrap script checks each and tells
+  you what's missing.
+- **API keys**: Deepgram (audio), one of OpenRouter / Anthropic /
+  OpenAI (LLM), Tavily (web search, optional).
 
-The bootstrap wizard prompts for the required ones; Tavily is
-optional and can be added to `~/.hermes/.env` after the fact.
+---
 
 ## Status
 
-**v0.1, early.** Built and validated on a Pi 5 deployment, opening to
-a small group of contributors. Expect:
+**v0.1, early.** Built and validated on Pi 5 + x86 Ubuntu
+deployments, opening to a small group of contributors. Expect:
 
 - Sharp edges in the bootstrap wizard, especially on macOS.
-- A few framework/instance boundaries that are fuzzier than they should
-  be — the file-ownership table is the source of truth, and we're
-  still tightening the implementation to match.
-- WebRTC audio behavior that's been validated on ARM Linux but not yet
-  bike-tested on Mac.
+- Framework / instance boundaries that are still being tightened.
+- WebRTC audio behavior that's been validated on ARM Linux + x86
+  but not yet on Mac.
 
 Issues, PRs, and "this didn't work for me" reports are all welcome.
+
+---
 
 ## License
 
 [Apache License 2.0](./LICENSE) — matching the sidekick repo.
 
-## Acknowledgments / related repos
+## Acknowledgments
 
 - [NousResearch/hermes-agent](https://github.com/NousResearch/hermes-agent) — upstream agent runtime.
-- [jscholz/sidekick](https://github.com/jscholz/sidekick) — the PWA + proxy + audio bridge.
+- [jscholz/sidekick](https://github.com/jscholz/sidekick) — PWA + proxy + audio bridge.
 - [jscholz/hermes-agent](https://github.com/jscholz/hermes-agent) — fork where local patches land before they're proposed upstream.
