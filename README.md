@@ -218,8 +218,8 @@ optional and can be added to `~/.hermes/.env` after the fact.
 
 ## Status
 
-**v0.1, early.** Built for Jonathan's Pi 5 deployment ("blueberry") and
-opening to a small group of contributors. Expect:
+**v0.1, early.** Built and validated on a Pi 5 deployment, opening to
+a small group of contributors. Expect:
 
 - Sharp edges in the bootstrap wizard, especially on macOS.
 - A few framework/instance boundaries that are fuzzier than they should
@@ -238,4 +238,4 @@ Issues, PRs, and "this didn't work for me" reports are all welcome.
 
 - [NousResearch/hermes-agent](https://github.com/NousResearch/hermes-agent) — upstream agent runtime.
 - [jscholz/sidekick](https://github.com/jscholz/sidekick) — the PWA + proxy + audio bridge.
-- [jscholz/hermes-agent](https://github.com/jscholz/hermes-agent) — Jonathan's fork, where local patches land before they're proposed upstream.
+- [jscholz/hermes-agent](https://github.com/jscholz/hermes-agent) — fork where local patches land before they're proposed upstream.

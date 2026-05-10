@@ -378,6 +378,39 @@ talking to Claude Code from the user's phone, with the
 `claude-session-history.md` priming the new session's context. One
 archives the past; the other launches the present.
 
+### Resume protocol (RESUME.md)
+
+The bootstrap seeds each host's `hosts/<host>/claude-code-memory/`
+directory with two files from `templates/claude-code-memory/`:
+
+- `RESUME.md` — a stub the live session is expected to overwrite each
+  meaningful turn with the in-flight conversation state.
+- `feedback_resume_protocol.md` — the discipline a new session reads
+  on resume: refresh `RESUME.md` after every meaningful exchange so
+  that a future fresh session (after `/compact`, host crash,
+  claude-remote rebind) picks up where the last one left off without
+  the user having to re-paste context.
+
+`MEMORY.md` in the same directory indexes both, so Claude Code's
+auto-memory loads them on session start.
+
+This complements `claude-session-history.md` (long-form, durable
+narrative) — RESUME is the volatile cursor on top of it. If your
+session is restarted and `RESUME.md` is stale, fall back to the
+`.jsonl` transcript on local disk for verbatim recovery (see the
+recipe inside `RESUME.md`).
+
+### Pruning stale .jsonl transcripts
+
+Claude Code writes one `.jsonl` per session under
+`~/.claude/projects/<encoded-cwd>/`. These accumulate unbounded and a
+single active session can be 8 MB+. They cannot be git-synced (single
+files exceed GitHub's 100 MB blob cap on long sessions), so a periodic
+prune is the only sensible retention. The bootstrap installs a cron
+entry running `scripts/prune-claude-cc-history.sh` nightly; default
+retention is 30 days. Tweak the `DAYS_TO_KEEP` constant at the top of
+the script if you want a different policy.
+
 ## Subsequent sessions (after first-run)
 
 Once the sentinel exists, your job is maintainer not installer. Common
