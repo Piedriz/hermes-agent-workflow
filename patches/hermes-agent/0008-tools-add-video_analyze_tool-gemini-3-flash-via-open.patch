@@ -1,5 +1,5 @@
 From 99b6a2b768904b3f947acbe6810a4607f8c6668f Mon Sep 17 00:00:00 2001
-From: Jonathan Scholz <jonathan.scholz@gmail.com>
+From: hermes-agent-workflow contributor <noreply@hermes-agent-workflow>
 Date: Sun, 26 Apr 2026 04:58:52 -0400
 Subject: [PATCH 8/8] tools: add video_analyze_tool (gemini-3-flash via
  openrouter)

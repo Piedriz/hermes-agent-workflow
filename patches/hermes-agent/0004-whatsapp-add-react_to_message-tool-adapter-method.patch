@@ -1,5 +1,5 @@
 From 4838b061f80758cea8601f66eca6466efe98c27f Mon Sep 17 00:00:00 2001
-From: Jonathan Scholz <jonathan.scholz@gmail.com>
+From: hermes-agent-workflow contributor <noreply@hermes-agent-workflow>
 Date: Sat, 25 Apr 2026 10:13:52 -0400
 Subject: [PATCH 4/8] whatsapp: add react_to_message tool + adapter method
 MIME-Version: 1.0
@@ -7,7 +7,7 @@ Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
 Adds an emoji-reaction path so the agent can ack low-stakes group
-messages without breaking flow with a [jonbot] text reply.
+messages without breaking flow with a [bot] text reply.
 
 - gateway/platforms/whatsapp.py: WhatsAppAdapter.react_to_message()
   POSTs to the bridge /react endpoint with the WAMessageKey fields
@@ -100,7 +100,7 @@ index 00000000..1ff2ad85
 +
 +Allows the agent to react to a specific WhatsApp message with an emoji
 +instead of sending a text reply, for low-stakes group acknowledgments
-+where a `[jonbot] 👍` text reply would break conversational flow.
++where a `[bot] 👍` text reply would break conversational flow.
 +
 +The tool calls the local WhatsApp bridge's POST /react endpoint, which
 +in turn invokes Baileys' `sendMessage(chatId, { react: { ... } })`.

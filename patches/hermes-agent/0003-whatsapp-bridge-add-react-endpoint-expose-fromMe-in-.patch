@@ -1,5 +1,5 @@
 From 541b5f38148a73c5ea93e5cc4641bfd218df2b92 Mon Sep 17 00:00:00 2001
-From: Jonathan Scholz <jonathan.scholz@gmail.com>
+From: hermes-agent-workflow contributor <noreply@hermes-agent-workflow>
 Date: Sat, 25 Apr 2026 10:11:01 -0400
 Subject: [PATCH 3/8] whatsapp-bridge: add /react endpoint + expose fromMe in
  events

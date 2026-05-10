@@ -1,5 +1,5 @@
 From 5c53596869e628be19e50d5669a7429b68f37eaf Mon Sep 17 00:00:00 2001
-From: Jonathan Scholz <jonathan.scholz@gmail.com>
+From: hermes-agent-workflow contributor <noreply@hermes-agent-workflow>
 Date: Sat, 25 Apr 2026 10:25:28 -0400
 Subject: [PATCH 5/8] whatsapp: include msg=<id> in group prefix for
  react_to_message tool

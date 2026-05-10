@@ -1,16 +1,15 @@
 From 335876176fd479b69a25eb064fac15fceb7be532 Mon Sep 17 00:00:00 2001
-From: Jonathan Scholz <jonathan.scholz@gmail.com>
+From: hermes-agent-workflow contributor <noreply@hermes-agent-workflow>
 Date: Sat, 25 Apr 2026 10:45:24 -0400
 Subject: [PATCH 6/8] gateway: suppress busy-ack chat message on WhatsApp
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
-The "[jonbot] ⚡ Interrupting current task (iteration N/M)" leak is
+The "[bot] ⚡ Interrupting current task (iteration N/M)" leak is
 landing in WhatsApp groups as user-visible replies. In casual group
-contexts (Amber/Tom/Luke alpha groups) this reads as the bot
-narrating its own internals — the friends find it weird and it
-breaks conversation flow.
+contexts this reads as the bot narrating its own internals — humans
+find it weird and it breaks conversation flow.
 
 Local patch: when the platform is WhatsApp, suppress the busy-ack
 chat send. The interrupt itself still fires (line 1572 above) — we
@@ -34,8 +33,8 @@ index 8fda2c1f..77b1ae07 100644
          thread_meta = {"thread_id": event.source.thread_id} if event.source.thread_id else None
 +
 +        # Local patch: suppress the busy-ack chat message on WhatsApp.
-+        # In group contexts (Amber/Tom/Luke trusted alpha groups), the
-+        # "[jonbot] ⚡ Interrupting current task (iteration 1/60)..."
++        # In group contexts the bot's
++        # "[bot] ⚡ Interrupting current task (iteration 1/60)..." inline
 +        # leak is louder than the value it adds — humans in a casual
 +        # WhatsApp conversation don't want internal agent status notices
 +        # appearing as inline replies. The interrupt itself still fires

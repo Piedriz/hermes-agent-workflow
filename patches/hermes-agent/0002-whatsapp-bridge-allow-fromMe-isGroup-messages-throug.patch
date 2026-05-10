@@ -1,5 +1,5 @@
 From 50c259df4ea86070f5bfb86fa83d62eb08ec3f52 Mon Sep 17 00:00:00 2001
-From: Jonathan Scholz <jonathan.scholz@gmail.com>
+From: hermes-agent-workflow contributor <noreply@hermes-agent-workflow>
 Date: Fri, 24 Apr 2026 19:34:43 -0400
 Subject: [PATCH 2/8] whatsapp-bridge: allow fromMe+isGroup messages through
 MIME-Version: 1.0

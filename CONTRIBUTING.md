@@ -20,9 +20,9 @@ the PR diff. See `PATCHES.md` for the active set.
 
 1. **Develop in your live install.** `cd ~/.hermes/hermes-agent`,
    check out the appropriate `local/<topic>` branch (or create one off
-   `local/whatsapp-sender-prefix` for WhatsApp-flavored work; see
-   `~/code/hermes-agent-private/HERMES_PATCHES.md` for branch-routing
-   conventions).
+   `local/whatsapp-sender-prefix` for WhatsApp-flavored work). Use
+   focused per-topic branches so the regenerated patch set stays
+   reviewable.
 2. **Test live.** The whole point of this workflow is that patches
    are validated against a real running service before being shared.
 3. **Export from your fork of `hermes-agent-workflow`.** Run:
@@ -40,10 +40,10 @@ the PR diff. See `PATCHES.md` for the active set.
 
 ## Reviewing a patch
 
-The maintainer (Jonathan, currently) reviews via the PR diff. The
-`.patch` file is plaintext, so the diff IS the review surface — it
-shows the full patch contents, file paths, hunks, and metadata. There
-is no separate code-review tool to learn.
+A maintainer reviews via the PR diff. The `.patch` file is plaintext,
+so the diff IS the review surface — it shows the full patch contents,
+file paths, hunks, and metadata. There is no separate code-review tool
+to learn.
 
 Self-merge is fine; the PR exists primarily as an audit trail. If a
 reviewer wants changes, the contributor regenerates the patch (fix in
