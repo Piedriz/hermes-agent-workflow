@@ -16,10 +16,12 @@ own customizations without breaking the rebase contract.
 
 ## What this repo is
 
-This is the public template for a Jonathan-style hermes + sidekick
-deployment — a self-hosted AI agent (hermes), a phone-friendly PWA front
-end (sidekick), and the glue that wires them together with WhatsApp /
-Slack / Notion / calendar integrations and a long-term memory store
+This is the public template for a hermes + sidekick deployment — a
+self-hosted AI agent (hermes), a phone-friendly PWA front end
+(sidekick), and the glue that wires them together with optional
+messaging integrations (WhatsApp adapter included; Slack / Notion /
+Google Workspace / etc. are NOT configured here — register your own
+per upstream hermes-agent docs) and a long-term memory store
 (hindsight).
 
 It is the sister repo to [`github.com/jscholz/sidekick`](https://github.com/jscholz/sidekick).
@@ -322,8 +324,8 @@ delay) sends a one-shot prompt telling the new Claude session to read
 `claude-session-history.md` end-to-end before doing anything else.
 
 The tmux session name is derived from `$HOST_NAME` (or `hostname -s`),
-so multi-host setups don't collide: `claude-blueberry`, `claude-tom-nook`,
-etc.
+so multi-host setups don't collide: `claude-<your-host>`,
+`claude-<your-other-host>`, etc.
 
 ### Where the session-history lives
 

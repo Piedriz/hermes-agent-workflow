@@ -84,20 +84,31 @@ agent:
 platform_toolsets:
   cli:
   - hermes-cli
-  telegram:
-  - hermes-telegram
-  discord:
-  - hermes-discord
+  # Add toolsets for platforms you've configured. The full list of
+  # upstream-supported platforms is in hermes-agent's documentation;
+  # the example below is the WhatsApp adapter which this template's
+  # bundled gateway-bridge supports out of the box. Other integrations
+  # (Slack, Notion, Google Workspace, etc.) are not configured by this
+  # template — register them yourself per upstream hermes-agent docs.
   whatsapp:
   - hermes-whatsapp
-  slack:
-  - hermes-slack
-  signal:
-  - hermes-signal
-  homeassistant:
-  - hermes-homeassistant
-  qqbot:
-  - hermes-qqbot
+
+# WhatsApp adapter config (consumed when the gateway-bridge loads the
+# WhatsApp platform). All fields are optional; fill in values that match
+# the policy you want. See hermes-agent docs for the canonical schema.
+whatsapp:
+  # 'allowlist' or 'allowall' — controls whether unknown DMs reach the
+  # agent. allowlist with explicit allow_from is the safe default.
+  dm_policy: allowlist
+  allow_from: []           # list of phone numbers / WA jids you accept DMs from
+  group_policy: allowlist
+  group_allow_from: []     # list of group jids the agent is allowed to read
+  require_mention: false   # if true, only respond when @mentioned in groups
+  mention_patterns: []     # regex patterns matched against incoming messages
+  free_response_chats: []  # chats where the agent responds without a mention
+  reply_prefix: ''         # optional prefix prepended to every reply
+  group_muted: []          # group jids the bot stays silent in
+  muted_reply: ''          # message returned when a muted group is messaged
 stt:
   enabled: true
   local:
