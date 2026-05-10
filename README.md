@@ -291,6 +291,45 @@ cd hermes-agent-workflow
 inputs and invokes it with `--env-file`. Read the script first;
 it's commented.
 
+### Networking — exposing the PWA for mobile use
+
+If you'll use the sidekick PWA from a phone or laptop *not on the
+install host*, you need to front it with HTTPS. Browser
+`getUserMedia()` (the API the dictate / call buttons rely on for
+microphone access) is gated to **secure origins** — `localhost` or
+`https://`. Loading sidekick over plain `http://<host>:3001/` from
+your phone will work for chat but **silently deny mic access**, so
+dictation, voice memos, and call mode all appear broken with no
+error in the UI.
+
+The recommended fix on a tailnet host is `tailscale serve`:
+
+```bash
+sudo tailscale serve --bg --https=443 http://127.0.0.1:3001
+# then access at https://<host>.<tailnet>.ts.net/  (port 443 implied)
+```
+
+Tailscale Serve fronts sidekick with a Let's Encrypt cert against
+your MagicDNS hostname; mic access is granted by the browser; the
+config persists across reboots.
+
+Prerequisites:
+
+- Tailscale Serve must be enabled tailnet-wide (one-time admin
+  click at `https://login.tailscale.com/f/serve`).
+- MagicDNS + HTTPS must be on for your tailnet (Tailscale admin
+  console → DNS).
+
+If you're not on Tailscale, the equivalent is any reverse proxy
+that terminates HTTPS in front of port 3001 — Caddy, nginx + Let's
+Encrypt, Cloudflare Tunnel, ngrok, etc. The constraint is simply
+"the PWA must be served over HTTPS to a name your browser trusts."
+
+`localhost` is exempt from the secure-origin check, so installing +
+testing on the same machine you run sidekick on doesn't need any
+of this. The HTTPS requirement only kicks in for cross-device
+access.
+
 ---
 
 ## §9 — Updating
