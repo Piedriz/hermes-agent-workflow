@@ -1,0 +1,14 @@
+# Daily encrypted hindsight bank dump → your fork.
+#
+# Replace REPO_PATH with the absolute path to your hermes-agent-workflow
+# clone, then `crontab -e` and paste the line below (uncommented).
+#
+# What this does: at 03:44 local time, runs `pg_dump` on the hindsight
+# Postgres database, writes plaintext SQL to hindsight-data/dump.sql,
+# git-crypt encrypts via `hindsight-data/**` rule, commits + pushes.
+# Restore on a fresh host via scripts/restore-hindsight-bank.sh.
+#
+# OFF BY DEFAULT. Same prerequisites as sync-hermes-state — see that
+# .cron.example file.
+
+# 44 3 * * * REPO_PATH/scripts/sync-hindsight-bank.sh >> ~/.hermes/logs/sync-hindsight-bank.log 2>&1
