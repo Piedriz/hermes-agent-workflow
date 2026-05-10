@@ -78,6 +78,30 @@ Keep entries terse, chronological, **most recent at the bottom**.
 Update the "Last updated" line on every meaningful edit. If you're
 unsure whether an event qualifies, ask the user.
 
+## Rehydrate protocol — what to read on resume
+
+When a Claude Code session resumes (after `/compact`, host crash,
+claude-remote rebind, or a fresh `claude-remote` invocation), read
+these files in order before doing anything else:
+
+1. **This file** (`claude-session-history.md`) — long-form, durable
+   project narrative. The "what happened to date" record.
+2. **`hosts/<your-host>/claude-code-memory/RESUME.md`** — live cursor
+   on the in-flight conversation, refreshed every meaningful turn.
+   The "what we were just doing" record. If its timestamp is stale
+   (>1h old), tail the latest `.jsonl` it points at for verbatim
+   context recovery.
+3. **`hosts/<your-host>/claude-code-memory/MEMORY.md`** — auto-loaded
+   index of feedback/preferences. Anything indexed there is loaded
+   automatically by Claude Code on session start, so reading it tells
+   you what context Claude already has.
+
+The discipline that keeps RESUME.md current is documented in
+`hosts/<your-host>/claude-code-memory/feedback_resume_protocol.md`
+(seeded from `templates/claude-code-memory/` by `bootstrap.sh`).
+Refresh RESUME.md after each meaningful exchange — that's how
+mid-session crash recovery stays cheap.
+
 ## Narrative
 
 (no entries yet — this is a fresh deployment of the workflow template)
@@ -95,4 +119,4 @@ not edit existing ones unless the underlying decision actually changed.
 
 ---
 
-Last updated: 2026-04-26 (template seed)
+Last updated: 2026-05-10 (rehydrate-protocol section added)
