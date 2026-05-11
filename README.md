@@ -54,6 +54,7 @@ listed here is **not** in your backup. The columns:
 | `cron/`                               | `~/.hermes/cron/`                     | no        | shared   | Hermes's own cron entries. |
 | `hooks/`                              | `~/.hermes/hooks/`                    | no        | shared   | Pre/post-turn hooks. |
 | `plugins/`                            | `~/.hermes/plugins/`                  | no        | shared   | Hermes plugins. |
+| `hermes-runtime-scripts/`             | `~/.hermes/scripts/`                  | no        | shared   | Agent-runtime callables — cron-driven Python scripts, skill helpers. See [its README](hermes-runtime-scripts/README.md). Distinct from `scripts/` at the repo root (install/sync helpers). |
 | `workspace/`                          | (referenced from skills, not symlinked into `~/.hermes/`) | optional | shared | Personal documents the agent reads/writes. Add to `.gitattributes` if you want it encrypted. |
 | `.env`                                | `~/.hermes/.env`                      | **yes**   | shared   | API keys (OpenRouter, Deepgram, Tavily, Anthropic). |
 | `auth.json`                           | `~/.hermes/auth.json`                 | **yes**   | shared   | Sidekick / hermes auth state. |
