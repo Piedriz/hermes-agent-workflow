@@ -354,6 +354,17 @@ link_dir "skills"             "skills"
 link_dir "cron"               "cron"
 link_dir "hooks"              "hooks"
 link_dir "plugins"            "plugins"
+# ~/.hermes/scripts hosts agent-runtime callables — cron-driven Python
+# scripts and skill helpers. Symlinking means any script the agent
+# (or you) drops there lands in your fork automatically and survives
+# host migrations. The repo ships an empty hermes-runtime-scripts/ dir
+# (with .gitkeep); user-specific scripts (e.g. notion daily-planner
+# rollover) accumulate over time and ride along with your fork.
+# Field bug 2026-05-11 (the original install pattern omitted this):
+# a host migration silently lost the user's notion cron script because
+# it had no canonical location in any tracked repo — added here so
+# subsequent installs don't repeat the mistake.
+link_dir "hermes-runtime-scripts"  "scripts"
 
 # Versioned state directories (git-crypt encrypted via .gitattributes —
 # the symlink works the same; encryption applies in git history).
