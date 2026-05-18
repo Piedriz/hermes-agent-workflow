@@ -32,7 +32,13 @@
 # state.db, replays the SQL, rebuilds FTS, restarts.
 set -euo pipefail
 
-REPO="$(cd "$(dirname "$0")/.." && pwd)"
+# Cron runs with a minimal PATH (typically /usr/bin:/bin), which often
+# doesn't include the sqlite3 binary if it lives in miniconda /
+# pyenv / brew. Add common locations so the script works under cron
+# AND interactively. Tweak as needed for the host.
+export PATH="${HOME}/miniconda3/bin:/opt/homebrew/bin:/usr/local/bin:${PATH}"
+
+REPO="${REPO:-$(cd "$(dirname "$0")/.." && pwd)}"
 LIVE_DB="${HOME}/.hermes/state.db"
 SNAPSHOT="/tmp/state.db.snapshot.$$"
 OUT_DIR="${REPO}/hermes-data"

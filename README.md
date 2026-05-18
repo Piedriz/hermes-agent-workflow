@@ -62,7 +62,7 @@ listed here is **not** in your backup. The columns:
 | `google_token.json`                   | `~/.hermes/google_token.json`         | **yes**   | shared   | Google OAuth refresh tokens. |
 | `whatsapp/session/**`                 | `~/.hermes/whatsapp/session/`         | **yes**   | shared   | Baileys session credentials. Losing these means QR-rescan from the phone. |
 | `pairing/**`                          | `~/.hermes/pairing/`                  | **yes**   | shared   | Sidekick PWA pairing tokens. |
-| `hindsight-data/dump.sql`             | (restore target: hindsight Postgres)  | **yes**   | shared   | Daily `pg_dump` of the hindsight memory bank. See §5. |
+| `hindsight-data/<table>.sql` + `hindsight-data/<bulk-table>/NNNN.sql` | (restore target: hindsight Postgres)  | **yes**   | shared   | Daily per-table `pg_dump` of the hindsight memory bank. Bulk tables (memory_units, memory_links) are byte-rotated into NNNN.sql chunks ≤ 80 MB each so the dump fits under GitHub's 100 MB per-blob cap; small tables stay single files. See §5. |
 | `hermes-data/state.sql`               | (restore target: `~/.hermes/state.db`) | **yes**  | shared   | Daily sqlite dump of `state.db` (sessions, messages, schema_version, state_meta). See §5. |
 | `hosts/<host>/claude-code-memory/`    | `~/.claude/projects/<proj>/memory/`   | no        | per-host | Per-host Claude Code memory dir, including `RESUME.md`. |
 | `hosts/<host>/claude-code-history/`   | (snapshotted from `~/.claude/projects/<proj>/*.jsonl`) | no | per-host | Compressed Claude Code session transcripts. Pruned on a cron. |
@@ -173,7 +173,7 @@ WhatsApp session). The model:
 
 | Asset                    | How it's captured           | Where it lands           | Cron                              | Restore script |
 | ------------------------ | --------------------------- | ------------------------ | --------------------------------- | -------------- |
-| Hindsight Postgres DB    | `pg_dump`                   | `hindsight-data/dump.sql` (encrypted) | `cron/sync-hindsight-bank.cron.example` | `scripts/restore-hindsight-bank.sh` |
+| Hindsight Postgres DB    | per-table `pg_dump` + byte-rotated chunks for the bulk tables (see scripts/lib/chunked-table-dump.py) | `hindsight-data/<table>.sql` + `hindsight-data/<bulk>/NNNN.sql` (encrypted) | `cron/sync-hindsight-bank.cron.example` | `scripts/restore-hindsight-bank.sh` |
 | `~/.hermes/state.db`     | `.backup` (atomic) → `.dump sessions messages schema_version state_meta` | `hermes-data/state.sql` (encrypted) | `cron/sync-hermes-state.cron.example` | `scripts/restore-hermes-state.sh` |
 | Live secrets             | symlinked into repo         | `.env`, `auth.json`, etc. (encrypted) | (instant — every git push) | git pull |
 
@@ -201,7 +201,7 @@ cd <your-fork>
 echo '<base64-key>' | base64 -d | git-crypt unlock -
 ./scripts/bootstrap.sh        # rebuilds the symlink tree
 ./scripts/restore-hermes-state.sh --yes   # replays state.sql
-./scripts/restore-hindsight-bank.sh       # replays hindsight dump.sql
+./scripts/restore-hindsight-bank.sh       # cats per-table + chunked .sql into psql
 ```
 
 `bootstrap.sh` writes a sentinel at `~/.hermes/.bootstrap.complete`
