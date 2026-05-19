@@ -50,9 +50,16 @@ mkdir -p "${REPO}/systemd" "${REPO}/sessions"
 # so this script stays minimal and predictable.
 
 # --- Systemd units (copied — system files, not symlinked) ---------------
+# `--copy-links` (-L) follows symlinks at the source. Without it, if
+# the live unit at ${SYSTEMD_SRC} is a symlink BACK to ${REPO}/systemd
+# (a perfectly reasonable manual setup so edits-via-repo land
+# immediately in live), `rsync -a` would copy the symlink itself —
+# producing a circular self-targeting symlink in the repo on the
+# NEXT sync (2026-05-19 incident). -L makes the copy follow through
+# the symlink and write the file content into the repo.
 for unit in hermes-gateway.service hermes-dashboard.service; do
   if [[ -f "${SYSTEMD_SRC}/${unit}" ]]; then
-    rsync -a "${SYSTEMD_SRC}/${unit}" "${REPO}/systemd/${unit}"
+    rsync -aL "${SYSTEMD_SRC}/${unit}" "${REPO}/systemd/${unit}"
   fi
 done
 
