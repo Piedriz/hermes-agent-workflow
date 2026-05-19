@@ -1,0 +1,18 @@
+[Unit]
+Description=Run the Hindsight health watchdog every minute
+Documentation=file:%h/.hermes/scripts/check-hindsight-health.sh
+
+[Timer]
+# Fire 30s after boot (gives hindsight-server.service time to come up
+# on a cold start before the watchdog tries to restart it), then
+# every minute thereafter.
+OnBootSec=30s
+OnUnitActiveSec=1min
+Unit=hindsight-doctor.service
+AccuracySec=15s
+# Keep firing even if the system was suspended/down during a scheduled
+# tick — catch up immediately on resume.
+Persistent=true
+
+[Install]
+WantedBy=timers.target

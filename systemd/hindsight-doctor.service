@@ -1,0 +1,16 @@
+[Unit]
+Description=Hindsight health watchdog — restarts hindsight-server.service when /health reports the backing pg0 is unreachable
+Documentation=file:%h/.hermes/scripts/check-hindsight-health.sh
+# Don't try to nudge while the dependency it manages is also restarting —
+# avoids a thrashing loop if hindsight-server is mid-bring-up.
+After=hindsight-server.service
+
+[Service]
+Type=oneshot
+ExecStart=%h/.hermes/scripts/check-hindsight-health.sh
+# One-shot probe. If the script fails, the timer fires it again next
+# minute regardless — we don't want systemd to enter a failed state.
+SuccessExitStatus=0
+
+[Install]
+WantedBy=default.target

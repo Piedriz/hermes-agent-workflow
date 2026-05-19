@@ -7,10 +7,14 @@ Wants=network-online.target
 Type=simple
 # Bind directly to the tailnet hostname. Socket lives on the tailnet
 # interface only (not LAN-reachable). --insecure is required to bind
-# non-loopback, but the dashboard's Host-header defense still kicks in:
-# only requests with Host: <YOUR_HOST>.tailXXXX.ts.net are accepted.
-# Replace <YOUR_HOST>.tailXXXX.ts.net with your tailnet hostname before enabling.
-ExecStart=%h/.local/bin/hermes dashboard --host <YOUR_HOST>.tailXXXX.ts.net --port 9119 --no-open --insecure
+# non-loopback, but the dashboard's Host-header defense still kicks
+# in: only requests with Host: ${HERMES_DASHBOARD_HOST} are accepted.
+#
+# HERMES_DASHBOARD_HOST is read from ~/.hermes/.env so the unit file
+# doesn't need per-host editing. Set it to your tailnet FQDN there:
+#   HERMES_DASHBOARD_HOST=<your-host>.tailXXXX.ts.net
+EnvironmentFile=%h/.hermes/.env
+ExecStart=/bin/sh -c '%h/.local/bin/hermes dashboard --host ${HERMES_DASHBOARD_HOST} --port 9119 --no-open --insecure'
 Restart=on-failure
 RestartSec=5
 Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
