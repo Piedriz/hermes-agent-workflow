@@ -54,7 +54,7 @@ Sidekick should be served over HTTPS for any browser that is not on
 secure context. `scripts/bootstrap.sh` prefers Tailscale Serve and maps:
 
 ```text
-https://<host>.<tailnet>.ts.net/ -> http://127.0.0.1:3001
+https://<host>.<tailnet>.ts.net:3001/ -> http://127.0.0.1:3001
 ```
 
 That gives a trusted certificate with no browser warning. If Tailscale

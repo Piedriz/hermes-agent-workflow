@@ -41,7 +41,7 @@ server:
   host: ~
   disable_screenshot: false
   # Bootstrap prefers Tailscale Serve for trusted HTTPS:
-  #   https://<host>.<tailnet>.ts.net/ -> http://127.0.0.1:3001
+  #   https://<host>.<tailnet>.ts.net:3001/ -> http://127.0.0.1:3001
   # If Tailscale Serve cannot be configured, bootstrap falls back to
   # native Sidekick HTTPS with the files below and writes equivalent env
   # vars to the sidekick checkout's .env.

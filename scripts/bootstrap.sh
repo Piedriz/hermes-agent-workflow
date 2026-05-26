@@ -256,8 +256,8 @@ fi
 
 # Sidekick voice capture, push, PWA install behavior, and WebRTC require
 # a browser secure context when the UI is opened from another device.
-# Prefer Tailscale Serve: it gives a trusted https://<host>.<tailnet>.ts.net/
-# URL and keeps Sidekick itself on local HTTP. If the node is not on
+# Prefer Tailscale Serve: it gives a trusted
+# https://<host>.<tailnet>.ts.net:3001/ URL and keeps Sidekick itself on local HTTP. If the node is not on
 # Tailscale or serve config needs a one-time sudo operator grant, fall back
 # to native Sidekick HTTPS with a self-signed certificate.
 section "Sidekick HTTPS"
@@ -291,15 +291,15 @@ TAILSCALE_DNS=""
 if command -v tailscale >/dev/null 2>&1; then
   TAILSCALE_DNS="$(tailscale status --json 2>/dev/null | python3 -c 'import sys,json; data=json.load(sys.stdin); print(data.get("Self",{}).get("DNSName","").rstrip("."))' 2>/dev/null || true)"
   if [[ -n "${TAILSCALE_DNS}" ]]; then
-    if tailscale serve --bg --https=443 http://127.0.0.1:3001 >/dev/null 2>&1; then
+    if tailscale serve --bg --https=3001 http://127.0.0.1:3001 >/dev/null 2>&1; then
       unset_sidekick_env SIDEKICK_HTTPS_CERT_FILE
       unset_sidekick_env SIDEKICK_HTTPS_KEY_FILE
-      ok "configured Tailscale Serve: https://${TAILSCALE_DNS}/ → http://127.0.0.1:3001"
+      ok "configured Tailscale Serve: https://${TAILSCALE_DNS}:3001/ → http://127.0.0.1:3001"
     elif sudo -n tailscale set --operator="${USER}" >/dev/null 2>&1 \
-      && tailscale serve --bg --https=443 http://127.0.0.1:3001 >/dev/null 2>&1; then
+      && tailscale serve --bg --https=3001 http://127.0.0.1:3001 >/dev/null 2>&1; then
       unset_sidekick_env SIDEKICK_HTTPS_CERT_FILE
       unset_sidekick_env SIDEKICK_HTTPS_KEY_FILE
-      ok "configured Tailscale Serve: https://${TAILSCALE_DNS}/ → http://127.0.0.1:3001"
+      ok "configured Tailscale Serve: https://${TAILSCALE_DNS}:3001/ → http://127.0.0.1:3001"
     else
       warn "Tailscale Serve could not be configured without a password."
       warn "Run once, then re-run bootstrap: sudo tailscale set --operator=${USER}"

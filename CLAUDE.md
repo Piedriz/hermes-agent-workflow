@@ -391,7 +391,7 @@ active, no unexpected warnings.
 `bootstrap.sh` clones Sidekick, configures Tailscale Serve when
 available, installs `sidekick.service`, and starts it on local port
 3001. The preferred external URL is
-`https://<host>.<tailnet>.ts.net/`, backed by Tailscale's trusted
+`https://<host>.<tailnet>.ts.net:3001/`, backed by Tailscale's trusted
 certificate. Verify:
 
 ```bash
