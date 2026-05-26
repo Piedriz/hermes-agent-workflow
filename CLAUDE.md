@@ -405,9 +405,11 @@ If bootstrap fell back to native Sidekick HTTPS, verify with
 
 If bootstrap reports that Tailscale Serve could not be configured,
 have the user run `sudo tailscale set --operator=$USER` once, then
-re-run bootstrap. The fallback is native Sidekick HTTPS with a
-self-signed cert on `https://<host>:3001`, which works but browsers
-will label it "Not Secure" until the cert is trusted locally.
+re-run bootstrap. Do not silently fall back to native self-signed
+HTTPS for a Tailscale install: it looks like the right URL but
+browsers still label it "Not Secure." Native self-signed HTTPS is only
+for explicit non-Tailscale installs via
+`SIDEKICK_ALLOW_SELF_SIGNED_FALLBACK=1`.
 
 For full sidekick install behaviour, see [`sidekick/install.sh`](https://github.com/jscholz/sidekick/blob/master/install.sh)
 and [`sidekick/docs/MAC_BOOTSTRAP.md`](https://github.com/jscholz/sidekick/blob/master/docs/MAC_BOOTSTRAP.md)

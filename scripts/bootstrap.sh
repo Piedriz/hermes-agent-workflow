@@ -257,9 +257,10 @@ fi
 # Sidekick voice capture, push, PWA install behavior, and WebRTC require
 # a browser secure context when the UI is opened from another device.
 # Prefer Tailscale Serve: it gives a trusted
-# https://<host>.<tailnet>.ts.net:3001/ URL and keeps Sidekick itself on local HTTP. If the node is not on
-# Tailscale or serve config needs a one-time sudo operator grant, fall back
-# to native Sidekick HTTPS with a self-signed certificate.
+# https://<host>.<tailnet>.ts.net:3001/ URL and keeps Sidekick itself
+# on local HTTP. Self-signed HTTPS is no longer the default because it
+# looks like a working install while browsers still show "Not Secure";
+# opt into that fallback explicitly with SIDEKICK_ALLOW_SELF_SIGNED_FALLBACK=1.
 section "Sidekick HTTPS"
 
 SIDEKICK_ENV_FILE="${SIDEKICK_PATH}/.env"
@@ -287,6 +288,7 @@ unset_sidekick_env() {
 }
 
 SIDEKICK_LOCAL_SCHEME="http"
+SIDEKICK_ALLOW_SELF_SIGNED_FALLBACK="${SIDEKICK_ALLOW_SELF_SIGNED_FALLBACK:-0}"
 TAILSCALE_DNS=""
 if command -v tailscale >/dev/null 2>&1; then
   TAILSCALE_DNS="$(tailscale status --json 2>/dev/null | python3 -c 'import sys,json; data=json.load(sys.stdin); print(data.get("Self",{}).get("DNSName","").rstrip("."))' 2>/dev/null || true)"
@@ -303,14 +305,23 @@ if command -v tailscale >/dev/null 2>&1; then
     else
       warn "Tailscale Serve could not be configured without a password."
       warn "Run once, then re-run bootstrap: sudo tailscale set --operator=${USER}"
-      SIDEKICK_LOCAL_SCHEME="https"
+      SIDEKICK_LOCAL_SCHEME="http"
     fi
   else
-    warn "Tailscale is installed but this node has no MagicDNS name; using self-signed HTTPS fallback"
-    SIDEKICK_LOCAL_SCHEME="https"
+    warn "Tailscale is installed but this node has no MagicDNS name; Sidekick will stay local HTTP"
+    SIDEKICK_LOCAL_SCHEME="http"
   fi
 else
-  warn "tailscale not found; using self-signed HTTPS fallback"
+  warn "tailscale not found; Sidekick will stay local HTTP"
+  SIDEKICK_LOCAL_SCHEME="http"
+fi
+
+if [[ "${SIDEKICK_LOCAL_SCHEME}" == "http" ]]; then
+  unset_sidekick_env SIDEKICK_HTTPS_CERT_FILE
+  unset_sidekick_env SIDEKICK_HTTPS_KEY_FILE
+fi
+
+if [[ "${SIDEKICK_LOCAL_SCHEME}" == "http" && "${SIDEKICK_ALLOW_SELF_SIGNED_FALLBACK}" == "1" ]]; then
   SIDEKICK_LOCAL_SCHEME="https"
 fi
 

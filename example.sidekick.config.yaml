@@ -42,9 +42,9 @@ server:
   disable_screenshot: false
   # Bootstrap prefers Tailscale Serve for trusted HTTPS:
   #   https://<host>.<tailnet>.ts.net:3001/ -> http://127.0.0.1:3001
-  # If Tailscale Serve cannot be configured, bootstrap falls back to
-  # native Sidekick HTTPS with the files below and writes equivalent env
-  # vars to the sidekick checkout's .env.
+  # Native Sidekick HTTPS is only an explicit non-Tailscale fallback:
+  # SIDEKICK_ALLOW_SELF_SIGNED_FALLBACK=1 scripts/bootstrap.sh
+  # Browsers will label self-signed certs "Not Secure" until trusted.
   https:
     cert_file: ~/.local/share/sidekick/tls/sidekick.crt
     key_file: ~/.local/share/sidekick/tls/sidekick.key

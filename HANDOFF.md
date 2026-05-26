@@ -64,6 +64,7 @@ Serve cannot be configured, run this once and re-run bootstrap:
 sudo tailscale set --operator=$USER
 ```
 
-The fallback is native Sidekick HTTPS with a self-signed cert on
-`https://<host>:3001`; that encrypts traffic but browsers will label it
-"Not Secure" until the cert is trusted locally.
+Do not treat native self-signed HTTPS as equivalent to the Tailscale
+setup: it encrypts traffic but browsers will label it "Not Secure."
+Self-signed fallback is only for explicit non-Tailscale installs via
+`SIDEKICK_ALLOW_SELF_SIGNED_FALLBACK=1`.
