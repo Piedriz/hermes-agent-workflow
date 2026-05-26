@@ -1,5 +1,5 @@
 [Unit]
-Description=Sidekick proxy (Node.js PWA + /v1/* agent surface, HTTPS port 3001)
+Description=Sidekick proxy (Node.js PWA + /v1/* agent surface, local port 3001)
 After=hermes-gateway.service network-online.target
 Wants=hermes-gateway.service network-online.target
 

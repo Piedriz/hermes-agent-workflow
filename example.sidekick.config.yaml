@@ -40,9 +40,11 @@ server:
   port: 3001
   host: ~
   disable_screenshot: false
-  # Bootstrap generates these by default and writes equivalent env vars
-  # to the sidekick checkout's .env. Keep HTTPS enabled for remote
-  # laptop/phone access; browser mic/WebRTC APIs require a secure context.
+  # Bootstrap prefers Tailscale Serve for trusted HTTPS:
+  #   https://<host>.<tailnet>.ts.net/ -> http://127.0.0.1:3001
+  # If Tailscale Serve cannot be configured, bootstrap falls back to
+  # native Sidekick HTTPS with the files below and writes equivalent env
+  # vars to the sidekick checkout's .env.
   https:
     cert_file: ~/.local/share/sidekick/tls/sidekick.crt
     key_file: ~/.local/share/sidekick/tls/sidekick.key

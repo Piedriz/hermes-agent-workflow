@@ -388,20 +388,26 @@ active, no unexpected warnings.
 
 **State**: hermes stack healthy.
 
-`bootstrap.sh` clones Sidekick, generates a self-signed HTTPS cert,
-writes `SIDEKICK_HTTPS_CERT_FILE` / `SIDEKICK_HTTPS_KEY_FILE` into
-the Sidekick `.env`, installs `sidekick.service`, and starts it on
-HTTPS port 3001. Verify:
+`bootstrap.sh` clones Sidekick, configures Tailscale Serve when
+available, installs `sidekick.service`, and starts it on local port
+3001. The preferred external URL is
+`https://<host>.<tailnet>.ts.net/`, backed by Tailscale's trusted
+certificate. Verify:
 
 ```bash
 systemctl --user status sidekick --no-pager
-curl -k https://127.0.0.1:3001/
+curl http://127.0.0.1:3001/
+tailscale serve status
 ```
 
-For remote phone/laptop use, tell the user to open
-`https://<host>:3001` and accept/trust the self-signed certificate
-once. If they want no browser warning, use Tailscale Serve, Caddy, or
-another trusted TLS proxy in front of the local Sidekick listener.
+If bootstrap fell back to native Sidekick HTTPS, verify with
+`curl -k https://127.0.0.1:3001/` instead.
+
+If bootstrap reports that Tailscale Serve could not be configured,
+have the user run `sudo tailscale set --operator=$USER` once, then
+re-run bootstrap. The fallback is native Sidekick HTTPS with a
+self-signed cert on `https://<host>:3001`, which works but browsers
+will label it "Not Secure" until the cert is trusted locally.
 
 For full sidekick install behaviour, see [`sidekick/install.sh`](https://github.com/jscholz/sidekick/blob/master/install.sh)
 and [`sidekick/docs/MAC_BOOTSTRAP.md`](https://github.com/jscholz/sidekick/blob/master/docs/MAC_BOOTSTRAP.md)
@@ -458,7 +464,7 @@ Running services:
   - hermes-gateway       (port 8642)
   - hermes-dashboard     (port set in your .env)
   - hindsight-server     (port 8765)
-  - sidekick             (HTTPS port 3001)
+  - sidekick             (local port 3001; Tailscale Serve for HTTPS)
   - sidekick-audio       (port set in sidekick's .env)
 
 State lives at:

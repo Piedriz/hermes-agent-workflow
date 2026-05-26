@@ -51,10 +51,19 @@ after its last successful sync are lost.
 
 Sidekick should be served over HTTPS for any browser that is not on
 `localhost`; microphone, PWA, push, and WebRTC features require a browser
-secure context. `scripts/bootstrap.sh` generates a host-local self-signed
-certificate and writes `SIDEKICK_HTTPS_CERT_FILE` /
-`SIDEKICK_HTTPS_KEY_FILE` into the Sidekick checkout's `.env`.
+secure context. `scripts/bootstrap.sh` prefers Tailscale Serve and maps:
 
-Self-signed certs usually require the browser to accept or trust the cert
-once. For a trusted cert without a browser warning, put Tailscale Serve,
-Caddy, nginx, or another TLS proxy in front of Sidekick.
+```text
+https://<host>.<tailnet>.ts.net/ -> http://127.0.0.1:3001
+```
+
+That gives a trusted certificate with no browser warning. If Tailscale
+Serve cannot be configured, run this once and re-run bootstrap:
+
+```bash
+sudo tailscale set --operator=$USER
+```
+
+The fallback is native Sidekick HTTPS with a self-signed cert on
+`https://<host>:3001`; that encrypts traffic but browsers will label it
+"Not Secure" until the cert is trusted locally.

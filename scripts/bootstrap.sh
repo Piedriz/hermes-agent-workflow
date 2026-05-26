@@ -56,7 +56,7 @@ Usage: bootstrap.sh [--unattended] [--env-file <path>]
 Recognized variables (set via env or env-file):
   HOST_NAME              host name; default: hostname -s
   SIDEKICK_PATH          sidekick clone path; default: ~/code/sidekick
-  SIDEKICK_TLS_DIR       HTTPS cert/key dir; default: ~/.local/share/sidekick/tls
+  SIDEKICK_TLS_DIR       fallback HTTPS cert/key dir; default: ~/.local/share/sidekick/tls
   HERMES_HOME            hermes home; default: ~/.hermes
   AGENT_LAT, AGENT_LON   ambient weather coords; optional
   DEEPGRAM_API_KEY       required (unless ~/.hermes/.env already has it)
@@ -222,7 +222,7 @@ prompt_secret() {
 # Non-secret prompts
 prompt_default HOST_NAME      "host name (used for hosts/<host>/ + systemd units)" "$(hostname -s)"
 prompt_default SIDEKICK_PATH  "sidekick clone path" "${SIDEKICK_PATH_DEFAULT}"
-prompt_default SIDEKICK_TLS_DIR "Sidekick HTTPS cert/key directory" "${SIDEKICK_TLS_DIR_DEFAULT}"
+prompt_default SIDEKICK_TLS_DIR "Sidekick fallback HTTPS cert/key directory" "${SIDEKICK_TLS_DIR_DEFAULT}"
 prompt_default HERMES_HOME    "hermes home directory" "${HERMES_HOME_DEFAULT}"
 prompt_default AGENT_LAT      "agent latitude (for ambient weather widget, optional)" ""
 prompt_default AGENT_LON      "agent longitude (for ambient weather widget, optional)" ""
@@ -256,37 +256,11 @@ fi
 
 # Sidekick voice capture, push, PWA install behavior, and WebRTC require
 # a browser secure context when the UI is opened from another device.
-# Localhost is exempt, but a home-server install almost always gets used
-# from a laptop/phone, so generate a host-local self-signed certificate
-# and configure Sidekick to serve HTTPS by default. Users who want a
-# trusted certificate with no browser warning can later replace this with
-# Tailscale Serve, Caddy, nginx, etc.
+# Prefer Tailscale Serve: it gives a trusted https://<host>.<tailnet>.ts.net/
+# URL and keeps Sidekick itself on local HTTP. If the node is not on
+# Tailscale or serve config needs a one-time sudo operator grant, fall back
+# to native Sidekick HTTPS with a self-signed certificate.
 section "Sidekick HTTPS"
-
-mkdir -p "${SIDEKICK_TLS_DIR}"
-chmod 700 "${SIDEKICK_TLS_DIR}"
-SIDEKICK_CERT_FILE="${SIDEKICK_TLS_DIR}/sidekick.crt"
-SIDEKICK_KEY_FILE="${SIDEKICK_TLS_DIR}/sidekick.key"
-
-if [[ -f "${SIDEKICK_CERT_FILE}" && -f "${SIDEKICK_KEY_FILE}" ]]; then
-  ok "Sidekick TLS cert/key already exist in ${SIDEKICK_TLS_DIR}"
-else
-  SAN="DNS:${HOST_NAME},DNS:${HOST_NAME}.local,IP:127.0.0.1"
-  if command -v tailscale >/dev/null 2>&1; then
-    ts_ip="$(tailscale ip -4 2>/dev/null | head -n1 || true)"
-    ts_dns="$(tailscale status --json 2>/dev/null | python3 -c 'import sys,json; data=json.load(sys.stdin); print(data.get("Self",{}).get("DNSName","").rstrip("."))' 2>/dev/null || true)"
-    [[ -n "${ts_ip}" ]] && SAN="${SAN},IP:${ts_ip}"
-    [[ -n "${ts_dns}" ]] && SAN="${SAN},DNS:${ts_dns}"
-  fi
-  info "generating Sidekick self-signed HTTPS certificate"
-  openssl req -x509 -newkey rsa:2048 -nodes -days 825 \
-    -keyout "${SIDEKICK_KEY_FILE}" \
-    -out "${SIDEKICK_CERT_FILE}" \
-    -subj "/CN=${HOST_NAME}" \
-    -addext "subjectAltName=${SAN}" >/dev/null 2>&1
-  chmod 600 "${SIDEKICK_CERT_FILE}" "${SIDEKICK_KEY_FILE}"
-  ok "generated ${SIDEKICK_CERT_FILE}"
-fi
 
 SIDEKICK_ENV_FILE="${SIDEKICK_PATH}/.env"
 touch "${SIDEKICK_ENV_FILE}"
@@ -302,9 +276,69 @@ write_sidekick_env() {
   fi
   chmod 600 "${SIDEKICK_ENV_FILE}"
 }
-write_sidekick_env SIDEKICK_HTTPS_CERT_FILE "${SIDEKICK_CERT_FILE}"
-write_sidekick_env SIDEKICK_HTTPS_KEY_FILE "${SIDEKICK_KEY_FILE}"
-ok "configured Sidekick HTTPS in ${SIDEKICK_ENV_FILE}"
+unset_sidekick_env() {
+  local key="$1" tmp
+  if grep -qE "^${key}=" "${SIDEKICK_ENV_FILE}"; then
+    tmp="${SIDEKICK_ENV_FILE}.tmp"
+    grep -vE "^${key}=" "${SIDEKICK_ENV_FILE}" > "${tmp}"
+    mv "${tmp}" "${SIDEKICK_ENV_FILE}"
+    chmod 600 "${SIDEKICK_ENV_FILE}"
+  fi
+}
+
+SIDEKICK_LOCAL_SCHEME="http"
+TAILSCALE_DNS=""
+if command -v tailscale >/dev/null 2>&1; then
+  TAILSCALE_DNS="$(tailscale status --json 2>/dev/null | python3 -c 'import sys,json; data=json.load(sys.stdin); print(data.get("Self",{}).get("DNSName","").rstrip("."))' 2>/dev/null || true)"
+  if [[ -n "${TAILSCALE_DNS}" ]]; then
+    if tailscale serve --bg --https=443 http://127.0.0.1:3001 >/dev/null 2>&1; then
+      unset_sidekick_env SIDEKICK_HTTPS_CERT_FILE
+      unset_sidekick_env SIDEKICK_HTTPS_KEY_FILE
+      ok "configured Tailscale Serve: https://${TAILSCALE_DNS}/ → http://127.0.0.1:3001"
+    elif sudo -n tailscale set --operator="${USER}" >/dev/null 2>&1 \
+      && tailscale serve --bg --https=443 http://127.0.0.1:3001 >/dev/null 2>&1; then
+      unset_sidekick_env SIDEKICK_HTTPS_CERT_FILE
+      unset_sidekick_env SIDEKICK_HTTPS_KEY_FILE
+      ok "configured Tailscale Serve: https://${TAILSCALE_DNS}/ → http://127.0.0.1:3001"
+    else
+      warn "Tailscale Serve could not be configured without a password."
+      warn "Run once, then re-run bootstrap: sudo tailscale set --operator=${USER}"
+      SIDEKICK_LOCAL_SCHEME="https"
+    fi
+  else
+    warn "Tailscale is installed but this node has no MagicDNS name; using self-signed HTTPS fallback"
+    SIDEKICK_LOCAL_SCHEME="https"
+  fi
+else
+  warn "tailscale not found; using self-signed HTTPS fallback"
+  SIDEKICK_LOCAL_SCHEME="https"
+fi
+
+if [[ "${SIDEKICK_LOCAL_SCHEME}" == "https" ]]; then
+  mkdir -p "${SIDEKICK_TLS_DIR}"
+  chmod 700 "${SIDEKICK_TLS_DIR}"
+  SIDEKICK_CERT_FILE="${SIDEKICK_TLS_DIR}/sidekick.crt"
+  SIDEKICK_KEY_FILE="${SIDEKICK_TLS_DIR}/sidekick.key"
+  if [[ -f "${SIDEKICK_CERT_FILE}" && -f "${SIDEKICK_KEY_FILE}" ]]; then
+    ok "Sidekick fallback TLS cert/key already exist in ${SIDEKICK_TLS_DIR}"
+  else
+    SAN="DNS:${HOST_NAME},DNS:${HOST_NAME}.local,IP:127.0.0.1"
+    ts_ip="$(tailscale ip -4 2>/dev/null | head -n1 || true)"
+    [[ -n "${ts_ip}" ]] && SAN="${SAN},IP:${ts_ip}"
+    [[ -n "${TAILSCALE_DNS}" ]] && SAN="${SAN},DNS:${TAILSCALE_DNS}"
+    info "generating Sidekick self-signed HTTPS certificate"
+    openssl req -x509 -newkey rsa:2048 -nodes -days 825 \
+      -keyout "${SIDEKICK_KEY_FILE}" \
+      -out "${SIDEKICK_CERT_FILE}" \
+      -subj "/CN=${HOST_NAME}" \
+      -addext "subjectAltName=${SAN}" >/dev/null 2>&1
+    chmod 600 "${SIDEKICK_CERT_FILE}" "${SIDEKICK_KEY_FILE}"
+    ok "generated ${SIDEKICK_CERT_FILE}"
+  fi
+  write_sidekick_env SIDEKICK_HTTPS_CERT_FILE "${SIDEKICK_CERT_FILE}"
+  write_sidekick_env SIDEKICK_HTTPS_KEY_FILE "${SIDEKICK_KEY_FILE}"
+  ok "configured Sidekick self-signed HTTPS fallback in ${SIDEKICK_ENV_FILE}"
+fi
 
 # ── 4. Symlink layout ────────────────────────────────────────────────
 # The workflow repo IS the source of truth for config + state — ~/.hermes/
@@ -820,7 +854,7 @@ for _ in $(seq 1 15); do
   fi
   sleep 1
 done
-SIDEKICK_URL="https://127.0.0.1:3001/"
+SIDEKICK_URL="${SIDEKICK_LOCAL_SCHEME}://127.0.0.1:3001/"
 info "probing ${SIDEKICK_URL}"
 for _ in $(seq 1 15); do
   if curl -kfsS --max-time 2 "${SIDEKICK_URL}" >/dev/null 2>&1; then
