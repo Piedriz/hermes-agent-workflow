@@ -68,3 +68,37 @@ Do not treat native self-signed HTTPS as equivalent to the Tailscale
 setup: it encrypts traffic but browsers will label it "Not Secure."
 Self-signed fallback is only for explicit non-Tailscale installs via
 `SIDEKICK_ALLOW_SELF_SIGNED_FALLBACK=1`.
+
+## Access Control
+
+Tailscale Serve is **tailnet-only**, not **user-only**. If your tailnet
+policy lets a machine reach `fontbrain:3001`, that machine can load the
+Sidekick app and call its API. Do not assume that a user-owned node is
+private merely because it is not tagged as a robot or workstation.
+
+For a Jon-only agent, add a tailnet ACL/grant that allows only Jon-owned
+devices to reach the active host's Sidekick port and removes broader
+`*:*` / tag-wide access for that destination. Example shape:
+
+```json
+{
+  "hosts": {
+    "fontbrain": "100.100.171.72"
+  },
+  "acls": [
+    {
+      "action": "accept",
+      "src": ["jscholz@reimaginerobotics.ai"],
+      "dst": ["fontbrain:3001"]
+    }
+  ]
+}
+```
+
+Validate from a non-Jon machine after changing policy:
+
+```bash
+curl -I https://fontbrain.<tailnet>.ts.net:3001/
+```
+
+It should fail from machines that are not meant to use the agent.

@@ -403,6 +403,12 @@ tailscale serve status
 If bootstrap fell back to native Sidekick HTTPS, verify with
 `curl -k https://127.0.0.1:3001/` instead.
 
+Security check: Tailscale Serve is tailnet-only, not user-only. If the
+user wants a personal agent, verify the tailnet ACL restricts
+`<host>:3001` to Jon-owned devices. A tagged workstation such as Cortex
+must not be able to fetch `/api/sidekick/sessions` unless the user has
+explicitly allowed it.
+
 If bootstrap reports that Tailscale Serve could not be configured,
 have the user run `sudo tailscale set --operator=$USER` once, then
 re-run bootstrap. Do not silently fall back to native self-signed

@@ -297,11 +297,13 @@ if command -v tailscale >/dev/null 2>&1; then
       unset_sidekick_env SIDEKICK_HTTPS_CERT_FILE
       unset_sidekick_env SIDEKICK_HTTPS_KEY_FILE
       ok "configured Tailscale Serve: https://${TAILSCALE_DNS}:3001/ → http://127.0.0.1:3001"
+      warn "Tailscale Serve is tailnet-only, not user-only. Restrict ${HOST_NAME}:3001 in the tailnet ACL if this agent must be Jon-only."
     elif sudo -n tailscale set --operator="${USER}" >/dev/null 2>&1 \
       && tailscale serve --bg --https=3001 http://127.0.0.1:3001 >/dev/null 2>&1; then
       unset_sidekick_env SIDEKICK_HTTPS_CERT_FILE
       unset_sidekick_env SIDEKICK_HTTPS_KEY_FILE
       ok "configured Tailscale Serve: https://${TAILSCALE_DNS}:3001/ → http://127.0.0.1:3001"
+      warn "Tailscale Serve is tailnet-only, not user-only. Restrict ${HOST_NAME}:3001 in the tailnet ACL if this agent must be Jon-only."
     else
       warn "Tailscale Serve could not be configured without a password."
       warn "Run once, then re-run bootstrap: sudo tailscale set --operator=${USER}"
