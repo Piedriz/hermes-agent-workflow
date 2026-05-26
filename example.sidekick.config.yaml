@@ -40,6 +40,12 @@ server:
   port: 3001
   host: ~
   disable_screenshot: false
+  # Bootstrap generates these by default and writes equivalent env vars
+  # to the sidekick checkout's .env. Keep HTTPS enabled for remote
+  # laptop/phone access; browser mic/WebRTC APIs require a secure context.
+  https:
+    cert_file: ~/.local/share/sidekick/tls/sidekick.crt
+    key_file: ~/.local/share/sidekick/tls/sidekick.key
 
 # ── STT keyterm biasing (managed via Settings → STT keyterms in UI) ──
 # Add proper nouns, names, brands, jargon that Deepgram should bias toward.

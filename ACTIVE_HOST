@@ -1,0 +1,7 @@
+# Multi-host coordination sentinel.
+# Managed by scripts/handoff-out.sh and scripts/handoff-in.sh.
+# Empty active_host means no host is currently active.
+
+active_host=
+active_since=
+last_transition=template initial state

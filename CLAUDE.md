@@ -386,15 +386,22 @@ active, no unexpected warnings.
 
 ## Section 9 — Optional: sidekick
 
-**State**: hermes stack healthy. Skip if user said no in §6.
+**State**: hermes stack healthy.
 
-Sidekick is mostly handled by its own install flow. Walk through:
+`bootstrap.sh` clones Sidekick, generates a self-signed HTTPS cert,
+writes `SIDEKICK_HTTPS_CERT_FILE` / `SIDEKICK_HTTPS_KEY_FILE` into
+the Sidekick `.env`, installs `sidekick.service`, and starts it on
+HTTPS port 3001. Verify:
 
 ```bash
-cd ~/code/sidekick && bun install
-# user edits .env (SIDEKICK_PLATFORM_URL → their hermes gateway)
-systemctl --user start sidekick           # or run dev mode for verification
+systemctl --user status sidekick --no-pager
+curl -k https://127.0.0.1:3001/
 ```
+
+For remote phone/laptop use, tell the user to open
+`https://<host>:3001` and accept/trust the self-signed certificate
+once. If they want no browser warning, use Tailscale Serve, Caddy, or
+another trusted TLS proxy in front of the local Sidekick listener.
 
 For full sidekick install behaviour, see [`sidekick/install.sh`](https://github.com/jscholz/sidekick/blob/master/install.sh)
 and [`sidekick/docs/MAC_BOOTSTRAP.md`](https://github.com/jscholz/sidekick/blob/master/docs/MAC_BOOTSTRAP.md)
@@ -431,8 +438,12 @@ Re-ask:
 
 If yes: walk the user through `crontab -e` and have them paste
 the lines from `cron/sync-hermes-state.cron.example` and
+`cron/sync-sidekick-db.cron.example` and
 `cron/sync-hindsight-bank.cron.example` (substituting `REPO_PATH`
-for the absolute path of their fork).
+for the absolute path of their fork). Sidekick's dump is required
+to preserve custom session titles, pins, push subscriptions,
+unread/activity state, and UI-facing message rows during host
+migration.
 
 ## Section 12 — Final summary
 
@@ -447,7 +458,7 @@ Running services:
   - hermes-gateway       (port 8642)
   - hermes-dashboard     (port set in your .env)
   - hindsight-server     (port 8765)
-  - sidekick             (port 3001 if you installed it)
+  - sidekick             (HTTPS port 3001)
   - sidekick-audio       (port set in sidekick's .env)
 
 State lives at:

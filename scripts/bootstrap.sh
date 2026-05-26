@@ -56,6 +56,7 @@ Usage: bootstrap.sh [--unattended] [--env-file <path>]
 Recognized variables (set via env or env-file):
   HOST_NAME              host name; default: hostname -s
   SIDEKICK_PATH          sidekick clone path; default: ~/code/sidekick
+  SIDEKICK_TLS_DIR       HTTPS cert/key dir; default: ~/.local/share/sidekick/tls
   HERMES_HOME            hermes home; default: ~/.hermes
   AGENT_LAT, AGENT_LON   ambient weather coords; optional
   DEEPGRAM_API_KEY       required (unless ~/.hermes/.env already has it)
@@ -107,6 +108,7 @@ need() {
 need uv      "curl -LsSf https://astral.sh/uv/install.sh | sh"
 need git     "apt install git  |  brew install git"
 need ffmpeg  "apt install ffmpeg  |  brew install ffmpeg"
+need openssl "apt install openssl  |  brew install openssl"
 
 # python3.11+ check — uv would catch this later but a clear message now
 # saves the user 10 minutes of confusing tracebacks.
@@ -144,6 +146,7 @@ section "Configuration"
 ENV_FILE_DEFAULT="${HOME}/.hermes/.env"
 HERMES_HOME_DEFAULT="${HOME}/.hermes"
 SIDEKICK_PATH_DEFAULT="${HOME}/code/sidekick"
+SIDEKICK_TLS_DIR_DEFAULT="${HOME}/.local/share/sidekick/tls"
 
 prompt_default() {
   # prompt_default <var-name> <prompt-text> <default> [--required]
@@ -219,6 +222,7 @@ prompt_secret() {
 # Non-secret prompts
 prompt_default HOST_NAME      "host name (used for hosts/<host>/ + systemd units)" "$(hostname -s)"
 prompt_default SIDEKICK_PATH  "sidekick clone path" "${SIDEKICK_PATH_DEFAULT}"
+prompt_default SIDEKICK_TLS_DIR "Sidekick HTTPS cert/key directory" "${SIDEKICK_TLS_DIR_DEFAULT}"
 prompt_default HERMES_HOME    "hermes home directory" "${HERMES_HOME_DEFAULT}"
 prompt_default AGENT_LAT      "agent latitude (for ambient weather widget, optional)" ""
 prompt_default AGENT_LON      "agent longitude (for ambient weather widget, optional)" ""
@@ -249,6 +253,58 @@ else
   git clone https://github.com/jscholz/sidekick "${SIDEKICK_PATH}"
   ok "sidekick cloned"
 fi
+
+# Sidekick voice capture, push, PWA install behavior, and WebRTC require
+# a browser secure context when the UI is opened from another device.
+# Localhost is exempt, but a home-server install almost always gets used
+# from a laptop/phone, so generate a host-local self-signed certificate
+# and configure Sidekick to serve HTTPS by default. Users who want a
+# trusted certificate with no browser warning can later replace this with
+# Tailscale Serve, Caddy, nginx, etc.
+section "Sidekick HTTPS"
+
+mkdir -p "${SIDEKICK_TLS_DIR}"
+chmod 700 "${SIDEKICK_TLS_DIR}"
+SIDEKICK_CERT_FILE="${SIDEKICK_TLS_DIR}/sidekick.crt"
+SIDEKICK_KEY_FILE="${SIDEKICK_TLS_DIR}/sidekick.key"
+
+if [[ -f "${SIDEKICK_CERT_FILE}" && -f "${SIDEKICK_KEY_FILE}" ]]; then
+  ok "Sidekick TLS cert/key already exist in ${SIDEKICK_TLS_DIR}"
+else
+  SAN="DNS:${HOST_NAME},DNS:${HOST_NAME}.local,IP:127.0.0.1"
+  if command -v tailscale >/dev/null 2>&1; then
+    ts_ip="$(tailscale ip -4 2>/dev/null | head -n1 || true)"
+    ts_dns="$(tailscale status --json 2>/dev/null | python3 -c 'import sys,json; data=json.load(sys.stdin); print(data.get("Self",{}).get("DNSName","").rstrip("."))' 2>/dev/null || true)"
+    [[ -n "${ts_ip}" ]] && SAN="${SAN},IP:${ts_ip}"
+    [[ -n "${ts_dns}" ]] && SAN="${SAN},DNS:${ts_dns}"
+  fi
+  info "generating Sidekick self-signed HTTPS certificate"
+  openssl req -x509 -newkey rsa:2048 -nodes -days 825 \
+    -keyout "${SIDEKICK_KEY_FILE}" \
+    -out "${SIDEKICK_CERT_FILE}" \
+    -subj "/CN=${HOST_NAME}" \
+    -addext "subjectAltName=${SAN}" >/dev/null 2>&1
+  chmod 600 "${SIDEKICK_CERT_FILE}" "${SIDEKICK_KEY_FILE}"
+  ok "generated ${SIDEKICK_CERT_FILE}"
+fi
+
+SIDEKICK_ENV_FILE="${SIDEKICK_PATH}/.env"
+touch "${SIDEKICK_ENV_FILE}"
+chmod 600 "${SIDEKICK_ENV_FILE}"
+write_sidekick_env() {
+  local key="$1" val="$2" tmp
+  if grep -qE "^${key}=" "${SIDEKICK_ENV_FILE}"; then
+    tmp="${SIDEKICK_ENV_FILE}.tmp"
+    sed "s|^${key}=.*|${key}=${val}|" "${SIDEKICK_ENV_FILE}" > "${tmp}"
+    mv "${tmp}" "${SIDEKICK_ENV_FILE}"
+  else
+    printf '%s=%s\n' "${key}" "${val}" >> "${SIDEKICK_ENV_FILE}"
+  fi
+  chmod 600 "${SIDEKICK_ENV_FILE}"
+}
+write_sidekick_env SIDEKICK_HTTPS_CERT_FILE "${SIDEKICK_CERT_FILE}"
+write_sidekick_env SIDEKICK_HTTPS_KEY_FILE "${SIDEKICK_KEY_FILE}"
+ok "configured Sidekick HTTPS in ${SIDEKICK_ENV_FILE}"
 
 # ── 4. Symlink layout ────────────────────────────────────────────────
 # The workflow repo IS the source of truth for config + state — ~/.hermes/
@@ -570,6 +626,7 @@ section "systemd user units"
 
 SYSTEMD_DST="${HOME}/.config/systemd/user"
 mkdir -p "${SYSTEMD_DST}"
+NODE_BIN_DIR="$(dirname "$(command -v node)")"
 
 render_unit() {
   # render_unit <repo-relative-template> <output-name>
@@ -588,6 +645,7 @@ render_unit() {
     -e "s|{{HERMES_HOME}}|${HERMES_HOME}|g" \
     -e "s|{{SIDEKICK_PATH}}|${SIDEKICK_PATH}|g" \
     -e "s|{{HOST_NAME}}|${HOST_NAME}|g" \
+    -e "s|{{NODE_BIN_DIR}}|${NODE_BIN_DIR}|g" \
     "${tmpl}" > "${dst}.tmp"
   if cmp -s "${dst}.tmp" "${dst}" 2>/dev/null; then
     rm "${dst}.tmp"
@@ -601,6 +659,7 @@ render_unit() {
 render_unit "systemd/hermes-gateway.service"   "hermes-gateway.service"
 render_unit "systemd/hermes-dashboard.service" "hermes-dashboard.service"
 render_unit "systemd/hindsight-server.service" "hindsight-server.service"
+render_unit "systemd/sidekick.service"         "sidekick.service"
 
 # Sidekick audio bridge unit lives in the sidekick checkout, not in
 # this workflow repo (so sidekick can ship breaking changes to the unit
@@ -748,6 +807,8 @@ start_unit() {
 start_unit hermes-gateway
 start_unit hermes-dashboard
 start_unit hindsight-server
+start_unit sidekick
+start_unit sidekick-audio
 
 # Give the gateway a few seconds to bind before we probe.
 HEALTH_URL="http://127.0.0.1:8642/health"
@@ -755,6 +816,15 @@ info "probing ${HEALTH_URL}"
 for _ in $(seq 1 15); do
   if curl -fsS --max-time 2 "${HEALTH_URL}" >/dev/null 2>&1; then
     ok "gateway healthy at ${HEALTH_URL}"
+    break
+  fi
+  sleep 1
+done
+SIDEKICK_URL="https://127.0.0.1:3001/"
+info "probing ${SIDEKICK_URL}"
+for _ in $(seq 1 15); do
+  if curl -kfsS --max-time 2 "${SIDEKICK_URL}" >/dev/null 2>&1; then
+    ok "sidekick healthy at ${SIDEKICK_URL}"
     break
   fi
   sleep 1

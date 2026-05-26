@@ -27,3 +27,8 @@ pairing/**                             filter=git-crypt diff=git-crypt
 # cron. Encrypted because the bank contains everything the agent has
 # learned about its user — names, addresses, schedule, private context.
 hindsight-data/**                      filter=git-crypt diff=git-crypt
+
+# === Sidekick supplemental UI DB dump ===
+# Contains conversation titles, pins, push subscriptions/preferences,
+# unread/activity state, VAPID keys, and Sidekick-facing message rows.
+sidekick-data/**                       filter=git-crypt diff=git-crypt

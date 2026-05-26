@@ -20,7 +20,7 @@ where your fork of *this* repo holds:
 - Your **skills** tree (vendored upstream + your edits + agent-authored skills)
 - Your **encrypted secrets** (`.env`, OAuth tokens, WhatsApp session)
 - Your **encrypted state backups** (sqlite session/message history,
-  hindsight memory bank dump) on a daily cron
+  Sidekick UI state, hindsight memory bank dump) on a daily cron
 - Per-host overrides under `hosts/<your-host>/`
 
 `scripts/bootstrap.sh` lays a symlink tree at `~/.hermes/` that
@@ -64,6 +64,7 @@ listed here is **not** in your backup. The columns:
 | `pairing/**`                          | `~/.hermes/pairing/`                  | **yes**   | shared   | Sidekick PWA pairing tokens. |
 | `hindsight-data/<table>.sql` + `hindsight-data/<bulk-table>/NNNN.sql` | (restore target: hindsight Postgres)  | **yes**   | shared   | Daily per-table `pg_dump` of the hindsight memory bank. Bulk tables (memory_units, memory_links) are byte-rotated into NNNN.sql chunks ≤ 80 MB each so the dump fits under GitHub's 100 MB per-blob cap; small tables stay single files. See §5. |
 | `hermes-data/state.sql`               | (restore target: `~/.hermes/state.db`) | **yes**  | shared   | Daily sqlite dump of `state.db` (sessions, messages, schema_version, state_meta). See §5. |
+| `sidekick-data/sidekick.sql`          | (restore target: `~/.hermes/sidekick.db`) | **yes** | shared | Daily sqlite dump of Sidekick supplemental UI state: custom titles, pins, push subscriptions/preferences, unread/activity state, VAPID keys, and UI-facing message rows. See §5. |
 | `hosts/<host>/claude-code-memory/`    | `~/.claude/projects/<proj>/memory/`   | no        | per-host | Per-host Claude Code memory dir, including `RESUME.md`. |
 | `hosts/<host>/claude-code-history/`   | (snapshotted from `~/.claude/projects/<proj>/*.jsonl`) | no | per-host | Compressed Claude Code session transcripts. Pruned on a cron. |
 | `ACTIVE_HOST`                         | (sentinel — not symlinked)            | no        | shared   | Which host is the current writer (see §7). |
@@ -108,7 +109,8 @@ runs:
 ├── .env                 → <repo>/.env              (encrypted)
 ├── auth.json            → <repo>/auth.json         (encrypted)
 ├── hindsight/config.json → <repo>/hindsight/config.json
-└── state.db             ← live sqlite, NOT symlinked (see §5 + §6)
+├── state.db             ← live sqlite, NOT symlinked (see §5 + §6)
+└── sidekick.db          ← live sqlite, NOT symlinked (see §5 + §6)
 ```
 
 Three helpers in `bootstrap.sh` build this:
@@ -168,16 +170,18 @@ auto-resolve every case.
 Three things in your install are too big to live in your repo as
 ordinary files but too important to lose: the **hindsight memory
 bank** (Postgres), the **hermes state.db** (sqlite — sessions,
-messages, FTS indexes), and **agent secrets** (`.env`, OAuth tokens,
-WhatsApp session). The model:
+messages, FTS indexes), the **Sidekick sidekick.db** (sqlite — UI
+metadata and notification state), and **agent secrets** (`.env`,
+OAuth tokens, WhatsApp session). The model:
 
 | Asset                    | How it's captured           | Where it lands           | Cron                              | Restore script |
 | ------------------------ | --------------------------- | ------------------------ | --------------------------------- | -------------- |
 | Hindsight Postgres DB    | per-table `pg_dump` + byte-rotated chunks for the bulk tables (see scripts/lib/chunked-table-dump.py) | `hindsight-data/<table>.sql` + `hindsight-data/<bulk>/NNNN.sql` (encrypted) | `cron/sync-hindsight-bank.cron.example` | `scripts/restore-hindsight-bank.sh` |
 | `~/.hermes/state.db`     | `.backup` (atomic) → `.dump sessions messages schema_version state_meta` | `hermes-data/state.sql` (encrypted) | `cron/sync-hermes-state.cron.example` | `scripts/restore-hermes-state.sh` |
+| `~/.hermes/sidekick.db`  | `.backup` (atomic) → `.dump` | `sidekick-data/sidekick.sql` (encrypted) | `cron/sync-sidekick-db.cron.example` | `scripts/restore-sidekick-db.sh` |
 | Live secrets             | symlinked into repo         | `.env`, `auth.json`, etc. (encrypted) | (instant — every git push) | git pull |
 
-Both daily-dump crons are **off by default**. Opt in by:
+Daily-dump crons are **off by default**. Opt in by:
 
 1. Confirming you've initialized git-crypt (you can't push
    meaningful encrypted backups without it).
@@ -201,6 +205,7 @@ cd <your-fork>
 echo '<base64-key>' | base64 -d | git-crypt unlock -
 ./scripts/bootstrap.sh        # rebuilds the symlink tree
 ./scripts/restore-hermes-state.sh --yes   # replays state.sql
+./scripts/restore-sidekick-db.sh --yes    # replays sidekick.sql
 ./scripts/restore-hindsight-bank.sh       # cats per-table + chunked .sql into psql
 ```
 
@@ -217,6 +222,9 @@ By design, several things are excluded from your fork:
   derivable from `hermes-data/state.sql` plus replay. The dump
   captures the conversation tables; FTS5 indexes are rebuilt by
   `restore-hermes-state.sh`.
+- **Live `~/.hermes/sidekick.db`** — written by the Sidekick/Hermes
+  UI adapter. It is restored from `sidekick-data/sidekick.sql`; do not
+  symlink the live DB because SQLite WAL writers need a local file.
 - **`~/.hermes/cache/` and `~/.hermes/logs/`** — derivable.
 - **`~/.hermes/kanban.db`, `~/.hermes/response_store.db`** —
   per-host scratch state. Restore would be wrong, not just
@@ -247,15 +255,17 @@ active_host=<hostname>
 ```
 
 Sync scripts (`sync-hermes-state.sh`, `sync-hindsight-bank.sh`)
-**refuse to run on any host where `$(hostname)` doesn't match**.
+and `sync-sidekick-db.sh` **refuse to run on any host where `$(hostname)` doesn't match**.
 This prevents two machines from racing on the same backup branch
 and producing merge conflicts in encrypted blobs (which are
 miserable to resolve).
 
 The intended pattern in v1: one machine is "live," others are cold
-spares. To switch active hosts, edit `ACTIVE_HOST`, commit, push,
-pull on the new host, run `restore-hermes-state.sh`, restart
-hermes-gateway. Concurrent multi-host (sync deltas, hindsight
+spares. To switch active hosts, run `scripts/handoff-out.sh` on the
+current active host, then `scripts/handoff-in.sh` on the new host.
+Those scripts final-sync Hermes state, Sidekick UI state, and the
+Hindsight bank; stop/start services; update `ACTIVE_HOST`; and run a
+small smoke test. Concurrent multi-host (sync deltas, hindsight
 sharded by host, etc.) is a v2 problem.
 
 ---
