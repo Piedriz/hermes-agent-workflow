@@ -105,7 +105,7 @@ fi
 if ! curl -fsS --max-time 3 http://127.0.0.1:8765/health >/dev/null 2>&1; then
   ISSUES+=("hindsight: /health not responding on 127.0.0.1:8765")
 fi
-sidekick_token=$(grep -E '^SIDEKICK_PLATFORM_TOKEN=' "${HERMES}/.env" 2>/dev/null | cut -d= -f2- | tr -d '"' | head -1)
+sidekick_token=$( (grep -E '^SIDEKICK_PLATFORM_TOKEN=' "${HERMES}/.env" 2>/dev/null || true) | cut -d= -f2- | tr -d '"' | head -1)
 if [[ -z "${sidekick_token}" ]]; then
   ISSUES+=("sidekick plugin: SIDEKICK_PLATFORM_TOKEN missing from ${HERMES}/.env")
 elif ! curl -fsS --max-time 3 -H "Authorization: Bearer ${sidekick_token}" \
@@ -128,7 +128,7 @@ fi
 # If a WhatsApp group is allow-listed, the bridge allowlist must have
 # at least one user — otherwise no message can ever reach the gateway.
 if grep -q '^\s*-\s.*@g\.us' "${HERMES}/config.yaml" 2>/dev/null; then
-  allowed=$(grep -E '^WHATSAPP_ALLOWED_USERS=' "${HERMES}/.env" 2>/dev/null | cut -d= -f2- | tr -d '"')
+  allowed=$( (grep -E '^WHATSAPP_ALLOWED_USERS=' "${HERMES}/.env" 2>/dev/null || true) | cut -d= -f2- | tr -d '"')
   if [[ -z "${allowed}" ]]; then
     ISSUES+=("whatsapp: group_allow_from set but WHATSAPP_ALLOWED_USERS is empty")
   fi
@@ -143,7 +143,7 @@ fi
 # learned this 2026-04-25 when MESSAGING_CWD pointed at an old openclaw
 # workspace dir that had been swept up during the openclaw spindown.
 # Surface as a hard warning so the next deletion doesn't go silent.
-cwd_value=$(grep -E '^MESSAGING_CWD=' "${HERMES}/.env" 2>/dev/null | cut -d= -f2- | tr -d '"' | head -1)
+cwd_value=$( (grep -E '^MESSAGING_CWD=' "${HERMES}/.env" 2>/dev/null || true) | cut -d= -f2- | tr -d '"' | head -1)
 if [[ -z "${cwd_value}" ]]; then
   # Fall back to config.yaml terminal.cwd. Crude grep — handles the
   # default 2-space-indent layout. Full YAML parsing is overkill here.
@@ -157,7 +157,7 @@ fi
 
 # memory.provider set? (sanity — if user configured hindsight we want
 # to notice if it got cleared accidentally).
-provider=$(grep -E '^\s*provider:\s*' "${HERMES}/config.yaml" 2>/dev/null | head -1 | awk '{print $2}' | tr -d "'\"")
+provider=$( (grep -E '^\s*provider:\s*' "${HERMES}/config.yaml" 2>/dev/null || true) | head -1 | awk '{print $2}' | tr -d "'\"")
 if [[ -n "${provider:-}" && "${provider}" == "hindsight" ]]; then
   # Ensure the LLM key for hindsight is present.
   if ! grep -q '^HINDSIGHT_API_LLM_API_KEY=' "${HERMES}/.env" 2>/dev/null; then
