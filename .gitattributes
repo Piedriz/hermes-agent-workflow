@@ -9,26 +9,55 @@
 # Anything NOT listed here is committed plaintext as usual. The .gitignore
 # patterns still apply (defensive — files matching *token*, *secret* etc.
 # are blocked from accidental adds even before reaching encryption).
+#
+# Public-template note: some directories below include plaintext .gitkeep
+# and README placeholders. Those are explicitly excluded from the filter so
+# the public template stays readable while real private content in a fork is
+# encrypted once git-crypt is initialized/unlocked.
 
 # === Secrets at the top level ===
 .env                                   filter=git-crypt diff=git-crypt
 auth.json                              filter=git-crypt diff=git-crypt
 google_client_secret.json              filter=git-crypt diff=git-crypt
 google_token.json                      filter=git-crypt diff=git-crypt
+gogcli/**                              filter=git-crypt diff=git-crypt
 
 # === WhatsApp Baileys session credentials ===
 # The whole credentials/session dir — losing this means QR-rescan from
 # the WhatsApp app to re-pair, so it MUST be in the encrypted backup.
 whatsapp/session/**                    filter=git-crypt diff=git-crypt
 pairing/**                             filter=git-crypt diff=git-crypt
+whatsapp/.gitkeep                      -filter -diff
+pairing/.gitkeep                       -filter -diff
+
+# === Agent memories, host state, and transcripts ===
+# These are private user/organization state in a real fork. The public
+# template keeps only placeholders unencrypted.
+memories/**                            filter=git-crypt diff=git-crypt
+memories/.gitkeep                      -filter -diff
+memories/README.md                     -filter -diff
+hosts/**                               filter=git-crypt diff=git-crypt
+hosts/example-host/**                  -filter -diff
+sessions/**                            filter=git-crypt diff=git-crypt
+sessions/.gitkeep                      -filter -diff
+cron/jobs.json                         filter=git-crypt diff=git-crypt
+cron/output/**                         filter=git-crypt diff=git-crypt
+cron/output/.gitkeep                   -filter -diff
 
 # === Hindsight bank dump ===
 # pg_dump output written by scripts/sync-hindsight-bank.sh on a daily
 # cron. Encrypted because the bank contains everything the agent has
 # learned about its user — names, addresses, schedule, private context.
 hindsight-data/**                      filter=git-crypt diff=git-crypt
+hindsight-data/.gitkeep                -filter -diff
+
+# === Hermes sqlite state dump ===
+# Contains sessions/messages from ~/.hermes/state.db as SQL.
+hermes-data/**                         filter=git-crypt diff=git-crypt
+hermes-data/.gitkeep                   -filter -diff
 
 # === Sidekick supplemental UI DB dump ===
 # Contains conversation titles, pins, push subscriptions/preferences,
 # unread/activity state, VAPID keys, and Sidekick-facing message rows.
 sidekick-data/**                       filter=git-crypt diff=git-crypt
+sidekick-data/.gitkeep                 -filter -diff

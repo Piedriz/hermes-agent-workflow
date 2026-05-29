@@ -124,6 +124,12 @@ explicitly opted out of the feature it gates.
 
 **State**: no clone exists. Skip if §0 found a clone.
 
+Preferred modern path: clone the public template, run
+`scripts/bootstrap.sh`, then run `scripts/promote-private-fork.sh` to
+create or attach the private repo, initialize/unlock git-crypt, copy
+live secrets into encrypted paths, and install versioning crons. This
+keeps public-template validation separate from private-state versioning.
+
 **Questions**:
 1. "What's your GitHub username? I'll fork `jscholz/hermes-agent-workflow` to `<username>/hermes-agent-workflow` and clone."
 2. "Where to clone? Convention is `~/code/hermes-agent-workflow`."
@@ -159,6 +165,30 @@ user to confirm "done", then proceed with `git clone <user-supplied-url> <path>`
 > User: yes
 >
 > Claude: Running gh fork → setting visibility private → clone → adding upstream remote. Done.
+
+If you start from the public template remote instead of an immediate
+fork, use this after bootstrap:
+
+```bash
+./scripts/promote-private-fork.sh \
+  --repo <user>/<agent-private-repo> \
+  --create-github \
+  --new-key-out ~/agent-private.git-crypt.key \
+  --rerun-bootstrap \
+  --install-crons
+```
+
+For a second agent administered by the same person, reuse an existing
+unlocked private repo's git-crypt key:
+
+```bash
+./scripts/promote-private-fork.sh \
+  --repo <user>/mombot-agent-private \
+  --create-github \
+  --reuse-key-from ~/code/hermes-agent-private \
+  --rerun-bootstrap \
+  --install-crons
+```
 
 ## Section 4 — Pre-cloned branch: confirm
 
@@ -201,8 +231,10 @@ Tell the user, **literally**:
 
 > I'm going to run `git-crypt init`. That generates a symmetric key
 > that encrypts everything matched by `.gitattributes` (`.env`,
-> `auth.json`, `google_*.json`, `whatsapp/session/**`, `pairing/**`,
-> `hindsight-data/**`, `hermes-data/**`).
+> `auth.json`, `google_*.json`, `gogcli/**`, `whatsapp/session/**`,
+> `pairing/**`, `memories/**`, `hosts/**`, `sessions/**`,
+> `cron/jobs.json`, `cron/output/**`, `hindsight-data/**`,
+> `hermes-data/**`, `sidekick-data/**`).
 >
 > **LOSING THIS KEY MEANS YOUR ENCRYPTED HISTORY IS UNRECOVERABLE.**
 >

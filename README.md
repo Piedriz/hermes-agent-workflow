@@ -49,9 +49,9 @@ listed here is **not** in your backup. The columns:
 | `AGENTS.md` (from `example.AGENTS.md`)| `~/.hermes/AGENTS.md`                 | no        | shared   | Tool-routing hints the running agent reads each session. Edit freely. |
 | `SOUL.md` (from `SOUL.md.template`)   | `~/.hermes/SOUL.md`                   | no        | shared   | Your agent's persona / system-prompt prefix. |
 | `hindsight/config.json` (from `example.hindsight.config.json`) | `~/.hermes/hindsight/config.json` | no | shared | Local hindsight client config. |
-| `memories/`                           | `~/.hermes/memories/`                 | no        | shared   | Append-only memory store the agent grows. Plaintext on purpose so you can read + curate. |
+| `memories/`                           | `~/.hermes/memories/`                 | **yes**   | shared   | Append-only memory store the agent grows. Encrypted in private forks; public repo keeps only placeholders plaintext. |
 | `skills/`                             | `~/.hermes/skills/`                   | no        | shared   | Skills tree. Vendored upstream snapshot + your edits + agent-authored skills. See §4. |
-| `cron/`                               | `~/.hermes/cron/`                     | no        | shared   | Hermes's own cron entries. |
+| `cron/`                               | `~/.hermes/cron/`                     | mixed     | shared   | Hermes's own cron entries. `cron/jobs.json` and `cron/output/**` are encrypted; examples/placeholders are plaintext. |
 | `hooks/`                              | `~/.hermes/hooks/`                    | no        | shared   | Pre/post-turn hooks. |
 | `plugins/`                            | `~/.hermes/plugins/`                  | no        | shared   | Hermes plugins. |
 | `hermes-runtime-scripts/`             | `~/.hermes/scripts/`                  | no        | shared   | Agent-runtime callables — cron-driven Python scripts, skill helpers. See [its README](hermes-runtime-scripts/README.md). Distinct from `scripts/` at the repo root (install/sync helpers). |
@@ -62,19 +62,21 @@ listed here is **not** in your backup. The columns:
 | `google_token.json`                   | `~/.hermes/google_token.json`         | **yes**   | shared   | Google OAuth refresh tokens. |
 | `whatsapp/session/**`                 | `~/.hermes/whatsapp/session/`         | **yes**   | shared   | Baileys session credentials. Losing these means QR-rescan from the phone. |
 | `pairing/**`                          | `~/.hermes/pairing/`                  | **yes**   | shared   | Sidekick PWA pairing tokens. |
+| `sessions/**`                         | (export target from Hermes CLI)       | **yes**   | shared   | Exported Hermes session transcripts from `scripts/sync-hermes.sh`. |
 | `hindsight-data/<table>.sql` + `hindsight-data/<bulk-table>/NNNN.sql` | (restore target: hindsight Postgres)  | **yes**   | shared   | Daily per-table `pg_dump` of the hindsight memory bank. Bulk tables (memory_units, memory_links) are byte-rotated into NNNN.sql chunks ≤ 80 MB each so the dump fits under GitHub's 100 MB per-blob cap; small tables stay single files. See §5. |
 | `hermes-data/state.sql`               | (restore target: `~/.hermes/state.db`) | **yes**  | shared   | Daily sqlite dump of `state.db` (sessions, messages, schema_version, state_meta). See §5. |
 | `sidekick-data/sidekick.sql`          | (restore target: `~/.hermes/sidekick.db`) | **yes** | shared | Daily sqlite dump of Sidekick supplemental UI state: custom titles, pins, push subscriptions/preferences, unread/activity state, VAPID keys, and UI-facing message rows. See §5. |
-| `hosts/<host>/claude-code-memory/`    | `~/.claude/projects/<proj>/memory/`   | no        | per-host | Per-host Claude Code memory dir, including `RESUME.md`. |
-| `hosts/<host>/claude-code-history/`   | (snapshotted from `~/.claude/projects/<proj>/*.jsonl`) | no | per-host | Compressed Claude Code session transcripts. Pruned on a cron. |
+| `hosts/<host>/claude-code-memory/`    | `~/.claude/projects/<proj>/memory/`   | **yes**   | per-host | Per-host Claude Code memory dir, including `RESUME.md`. |
+| `hosts/<host>/claude-code-history/`   | (snapshotted from `~/.claude/projects/<proj>/*.jsonl`) | **yes** | per-host | Compressed Claude Code session transcripts. Pruned on a cron. |
 | `ACTIVE_HOST`                         | (sentinel — not symlinked)            | no        | shared   | Which host is the current writer (see §7). |
 
 **Two design choices baked into this table:**
 
-1. **Memories live in plaintext, secrets and state-dumps live encrypted.**
-   Memories are content you want to read, edit, and curate from any
-   editor. Secrets and bulk state dumps are content you only want a
-   machine to read.
+1. **Runtime-private state is encrypted in real forks.**
+   Memories, host state, transcripts, secrets, OAuth tokens, and DB
+   dumps are all git-crypt-protected once the clone is promoted to a
+   private repo. Public placeholders stay plaintext so this template is
+   readable.
 2. **The symlink layout is one-tier.** `~/.hermes/skills/` IS your
    fork's `skills/` directory — not a writable user copy that
    shadows a read-only catalog. This means edits the agent makes at
@@ -290,13 +292,29 @@ invocation, doctor verification, optional sidekick + claude-remote +
 daily-dump cron. Each step probes state first, asks before doing
 anything destructive, and is safe to interrupt and resume.
 
-**Manual path** (no Claude in the loop):
+**Manual path** (no Claude in the loop), public-template validation:
 
 ```bash
 git clone https://github.com/jscholz/hermes-agent-workflow.git
 cd hermes-agent-workflow
 ./scripts/bootstrap.sh
 ```
+
+To turn that validation install into a real restorable agent, promote it
+to a private repo and install the versioning crons:
+
+```bash
+./scripts/promote-private-fork.sh \
+  --repo YOUR_GITHUB_USER/my-agent-private \
+  --create-github \
+  --new-key-out ~/my-agent-private.git-crypt.key \
+  --rerun-bootstrap \
+  --install-crons
+```
+
+See [PRIVATE_FORK.md](PRIVATE_FORK.md) for the full finish-line flow,
+including reusing an existing git-crypt key across multiple private
+agents.
 
 `bootstrap.sh` is the workhorse either way — Claude just gathers
 inputs and invokes it with `--env-file`. Read the script first;
