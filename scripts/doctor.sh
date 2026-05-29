@@ -186,21 +186,29 @@ fi
 # than file mtime because rsync preserves source mtime, so dest files
 # don't get touched on no-op reconciliations.)
 CC_MEMORY_MARKER="${REPO}/hosts/${HOST_NAME}/claude-code-memory/MEMORY.md"
-if [[ ! -f "${CC_MEMORY_MARKER}" ]]; then
-  ISSUES+=("cc-sync: ${CC_MEMORY_MARKER} missing (sync-cc-history.sh has never run?)")
-else
-  last_sync_epoch=$(git -C "${REPO}" log -1 --since='30 minutes ago' --format=%ct \
-    --grep='^sync: cc history snapshot' 2>/dev/null || true)
-  if [[ -z "${last_sync_epoch}" ]]; then
-    # Look up how stale the most recent matching commit actually is, for
-    # a more useful warning message.
-    most_recent=$(git -C "${REPO}" log -1 --format=%ct \
-      --grep='^sync: cc history snapshot' 2>/dev/null || echo "0")
-    if [[ "${most_recent}" == "0" ]]; then
-      ISSUES+=("cc-sync: no 'sync: cc history snapshot' commit ever found in ${REPO}")
-    else
-      age_min=$(( ( $(date +%s) - most_recent ) / 60 ))
-      ISSUES+=("cc-sync: last snapshot commit was ${age_min}min ago (>30min — sync-cc-history.sh cron stalled?)")
+cc_sync_enabled=0
+if command -v crontab >/dev/null 2>&1; then
+  if crontab -l 2>/dev/null | awk '!/^[[:space:]]*#/ && /sync-cc-history[.]sh/ { found=1 } END { exit(found ? 0 : 1) }'; then
+    cc_sync_enabled=1
+  fi
+fi
+if [[ "${cc_sync_enabled}" == "1" ]]; then
+  if [[ ! -f "${CC_MEMORY_MARKER}" ]]; then
+    ISSUES+=("cc-sync: ${CC_MEMORY_MARKER} missing (sync-cc-history.sh has never run?)")
+  else
+    last_sync_epoch=$(git -C "${REPO}" log -1 --since='30 minutes ago' --format=%ct \
+      --grep='^sync: cc history snapshot' 2>/dev/null || true)
+    if [[ -z "${last_sync_epoch}" ]]; then
+      # Look up how stale the most recent matching commit actually is, for
+      # a more useful warning message.
+      most_recent=$(git -C "${REPO}" log -1 --format=%ct \
+        --grep='^sync: cc history snapshot' 2>/dev/null || echo "0")
+      if [[ "${most_recent}" == "0" ]]; then
+        ISSUES+=("cc-sync: no 'sync: cc history snapshot' commit ever found in ${REPO}")
+      else
+        age_min=$(( ( $(date +%s) - most_recent ) / 60 ))
+        ISSUES+=("cc-sync: last snapshot commit was ${age_min}min ago (>30min — sync-cc-history.sh cron stalled?)")
+      fi
     fi
   fi
 fi
