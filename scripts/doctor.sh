@@ -199,18 +199,27 @@ if [[ "${cc_sync_enabled}" == "1" ]]; then
   if [[ ! -f "${CC_MEMORY_MARKER}" ]]; then
     ISSUES+=("cc-sync: ${CC_MEMORY_MARKER} missing (sync-cc-history.sh has never run?)")
   else
-    last_sync_epoch=$(git -C "${REPO}" log -1 --since='30 minutes ago' --format=%ct \
-      --grep='^sync: cc history snapshot' 2>/dev/null || true)
-    if [[ -z "${last_sync_epoch}" ]]; then
+    heartbeat="${HERMES}/logs/sync-cc-history.heartbeat"
+    heartbeat_epoch=0
+    if [[ -f "${heartbeat}" ]]; then
+      heartbeat_epoch=$(stat -c %Y "${heartbeat}" 2>/dev/null || echo 0)
+    fi
+    if (( heartbeat_epoch > 0 && ( $(date +%s) - heartbeat_epoch ) <= 1800 )); then
+      :
+    else
+      last_sync_epoch=$(git -C "${REPO}" log -1 --since='30 minutes ago' --format=%ct \
+        --grep='^sync: cc history snapshot' 2>/dev/null || true)
+      if [[ -z "${last_sync_epoch}" ]]; then
       # Look up how stale the most recent matching commit actually is, for
       # a more useful warning message.
-      most_recent=$(git -C "${REPO}" log -1 --format=%ct \
-        --grep='^sync: cc history snapshot' 2>/dev/null || echo "0")
-      if [[ "${most_recent}" == "0" ]]; then
-        ISSUES+=("cc-sync: no 'sync: cc history snapshot' commit ever found in ${REPO}")
-      else
-        age_min=$(( ( $(date +%s) - most_recent ) / 60 ))
-        ISSUES+=("cc-sync: last snapshot commit was ${age_min}min ago (>30min — sync-cc-history.sh cron stalled?)")
+        most_recent=$(git -C "${REPO}" log -1 --format=%ct \
+          --grep='^sync: cc history snapshot' 2>/dev/null || echo "0")
+        if [[ "${most_recent}" == "0" ]]; then
+          ISSUES+=("cc-sync: no heartbeat or 'sync: cc history snapshot' commit found in ${REPO}")
+        else
+          age_min=$(( ( $(date +%s) - most_recent ) / 60 ))
+          ISSUES+=("cc-sync: last heartbeat/commit was ${age_min}min ago (>30min — sync-cc-history.sh cron stalled?)")
+        fi
       fi
     fi
   fi
