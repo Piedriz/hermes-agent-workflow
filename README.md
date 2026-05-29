@@ -302,6 +302,13 @@ cd hermes-agent-workflow
 inputs and invokes it with `--env-file`. Read the script first;
 it's commented.
 
+Direct installs from `github.com/jscholz/hermes-agent-workflow` are
+treated as public-template validation installs: host-local Claude Code
+memory is kept under `~/.hermes/host-state/<host>/` so the public
+checkout stays clean. In a fork, bootstrap uses the versioned
+`hosts/<host>/` path by default. Override with
+`HERMES_WORKFLOW_HOST_STATE_MODE=local` or `versioned` if needed.
+
 The default fresh-install path uses `OPENAI_API_KEY` for Hermes model
 access and for the local Hindsight memory server. Sidekick is served on
 local HTTP behind Tailscale Serve when Tailscale is available, giving a

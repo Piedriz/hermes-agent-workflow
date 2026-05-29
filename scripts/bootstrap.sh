@@ -700,15 +700,42 @@ EOF
 fi
 
 # ── 5d. Claude-Code memory dir (with resume protocol) ────────────────
-# Each host's claude-code memory dir lives under hosts/<host>/claude-code-memory/
-# in the workflow repo. We seed it from templates/claude-code-memory/
+# Each host's claude-code memory dir normally lives under
+# hosts/<host>/claude-code-memory/ in the workflow repo. Direct installs
+# from the public template keep it under ~/.hermes/host-state instead so
+# validating the public repo does not create personal untracked state.
+# We seed it from templates/claude-code-memory/
 # (RESUME.md stub + feedback_resume_protocol.md) so a fresh-host claude
 # session resume reads the protocol on day one. Then we symlink the
 # live ~/.claude/projects/<encoded-cwd>/memory dir at it so memory
 # writes from the running session land back in the repo.
 section "Claude Code memory + resume protocol"
 
-HOST_MEMORY_DIR="${REPO}/hosts/${HOST_NAME}/claude-code-memory"
+HOST_STATE_MODE="${HERMES_WORKFLOW_HOST_STATE_MODE:-auto}"
+if [[ "${HOST_STATE_MODE}" == "auto" ]]; then
+  origin_url="$(git -C "${REPO}" remote get-url origin 2>/dev/null || true)"
+  case "${origin_url}" in
+    git@github.com:jscholz/hermes-agent-workflow.git|https://github.com/jscholz/hermes-agent-workflow.git)
+      HOST_STATE_MODE="local"
+      ;;
+    *)
+      HOST_STATE_MODE="versioned"
+      ;;
+  esac
+fi
+case "${HOST_STATE_MODE}" in
+  local)
+    HOST_MEMORY_DIR="${HERMES_HOME}/host-state/${HOST_NAME}/claude-code-memory"
+    ok "using local host memory dir ${HOST_MEMORY_DIR}"
+    ;;
+  versioned)
+    HOST_MEMORY_DIR="${REPO}/hosts/${HOST_NAME}/claude-code-memory"
+    ok "using versioned host memory dir ${HOST_MEMORY_DIR}"
+    ;;
+  *)
+    fail "HERMES_WORKFLOW_HOST_STATE_MODE must be auto, local, or versioned"
+    ;;
+esac
 TEMPLATE_MEMORY_DIR="${REPO}/templates/claude-code-memory"
 mkdir -p "${HOST_MEMORY_DIR}"
 
