@@ -12,6 +12,7 @@ blogwatcher:d0b55ef6acff9ad26f1febace610ca3b
 claude-code:1b94564fef16f64eefe3902c6f376ffb
 codebase-inspection:5b1f99e926f347fe7c8c2658c9cc15b9
 codex:79bb6b5d9b47453cd0d7ac25df5a3c97
+design-md:267d0d8c363c9809744d1c62d561805e
 dogfood:fc03244c3237e6b7325dc8aef387f2e3
 dspy:5e0770e2563d11d9d4cc040681277c1c
 evaluating-llms-harness:d9cd486dd94740c9e0400258759a8f54
@@ -28,7 +29,6 @@ godmode:c592b460bf06e1f31b51bc6ac299e111
 google-workspace:84ff6ddcfc6eba156e4f617b8e760c26
 heartmula:ce53b2e6c9d68238cae5ae727738ecde
 hermes-agent:453f84e7bca3800e204ae1fe94b0af22
-himalaya:1c94b92d224366ab22b10c01d835178f
 huggingface-hub:14002a449cb5f9a5ff8bdc7f730bcb2f
 ideation:ed7f67fb2da05b2d85fd798c4b5dd913
 imessage:f545da0f5cc64dd9ee1ffd2b7733a11b
@@ -61,6 +61,7 @@ segment-anything-model:e21f0c842d399668483c440b7943c5d5
 serving-llms-vllm:a8b5453a5316da8df055a0f23c3cbd25
 songsee:7fd11900a2b71aa070b2c52a5c24c614
 songwriting-and-ai-music:236e0d189a2e7e87b9f080a52ed9188e
+spotify:af733b32166f235fe3e0026e213ff2d4
 subagent-driven-development:c0fc6b8a5f450d03a7f77f9bee4628c8
 systematic-debugging:883a52bedd09b321dc6441114dace445
 test-driven-development:2e4bab04e2e2bf6a7742f88115690503
