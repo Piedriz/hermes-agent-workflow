@@ -23,6 +23,7 @@ CREATE_GITHUB=0
 INSTALL_CRONS=0
 RUN_INITIAL_SYNC=0
 RERUN_BOOTSTRAP=0
+SKIP_GOOGLE_OAUTH=0
 ASSUME_YES=0
 FORCE_ORIGIN=0
 
@@ -38,6 +39,7 @@ Options:
   --key-file PATH              Unlock this repo with an existing git-crypt key file.
   --new-key-out PATH           First private repo: git-crypt init and export key here.
   --env-file PATH              Copy this env file into encrypted .env.
+  --skip-google-oauth          Do not copy google_*.json or ~/.config/gogcli.
   --rerun-bootstrap            Re-run bootstrap with versioned host state after promotion.
   --install-crons              Install private versioning crons.
   --run-initial-sync           Run sync scripts once now after committing promotion.
@@ -65,6 +67,7 @@ while (( $# > 0 )); do
     --new-key-out=*) NEW_KEY_OUT="${1#--new-key-out=}"; shift ;;
     --env-file) shift; ENV_FILE_ARG="${1:-}"; shift ;;
     --env-file=*) ENV_FILE_ARG="${1#--env-file=}"; shift ;;
+    --skip-google-oauth) SKIP_GOOGLE_OAUTH=1; shift ;;
     --rerun-bootstrap) RERUN_BOOTSTRAP=1; shift ;;
     --install-crons) INSTALL_CRONS=1; shift ;;
     --run-initial-sync) RUN_INITIAL_SYNC=1; shift ;;
@@ -214,12 +217,19 @@ else
   copy_file_from_live "$HOME/.hermes/.env" ".env" ".env"
 fi
 
-for secret in auth.json google_client_secret.json google_token.json; do
+for secret in auth.json; do
   copy_file_from_live "$HOME/.hermes/$secret" "$secret" "$secret"
 done
+if (( ! SKIP_GOOGLE_OAUTH )); then
+  for secret in google_client_secret.json google_token.json; do
+    copy_file_from_live "$HOME/.hermes/$secret" "$secret" "$secret"
+  done
+fi
 copy_dir_from_live "$HOME/.hermes/whatsapp/session" "whatsapp/session" "WhatsApp session"
 copy_dir_from_live "$HOME/.hermes/pairing" "pairing" "Sidekick pairing"
-copy_dir_from_live "$HOME/.config/gogcli" "gogcli" "gogcli config/keyring"
+if (( ! SKIP_GOOGLE_OAUTH )); then
+  copy_dir_from_live "$HOME/.config/gogcli" "gogcli" "gogcli config/keyring"
+fi
 copy_dir_from_live "$HOME/.hermes/host-state/$HOST_NAME/claude-code-memory" "hosts/$HOST_NAME/claude-code-memory" "Claude Code host memory"
 
 printf 'active_host=%s\n' "$HOST_NAME" > "$REPO/ACTIVE_HOST"

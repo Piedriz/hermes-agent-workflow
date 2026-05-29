@@ -55,6 +55,10 @@ on disk.
   encrypted before the first push
 - commits and pushes to `origin/main`
 
+Use `--skip-google-oauth` for bots where the live host has personal
+Google/gog state but the new agent should wait for a separate shared
+Google account.
+
 ## Versioning Crons
 
 `scripts/install-versioning-crons.sh` installs a managed crontab block:
