@@ -27,7 +27,8 @@ set -euo pipefail
 
 REPO="${REPO:-$(cd "$(dirname "$0")/.." && pwd)}"
 HOST_NAME="${HOST_NAME:-$(hostname -s)}"
-CC_PROJECT_DIR="${CC_PROJECT_DIR:--home-${USER}}"
+CURRENT_USER="${USER:-${LOGNAME:-$(id -un)}}"
+CC_PROJECT_DIR="${CC_PROJECT_DIR:--home-${CURRENT_USER}}"
 SRC_CLAUDE_MEMORY="${SRC_CLAUDE_MEMORY:-$HOME/.claude/projects/${CC_PROJECT_DIR}/memory/}"
 DST_CLAUDE_MEMORY="${REPO}/hosts/${HOST_NAME}/claude-code-memory/"
 
