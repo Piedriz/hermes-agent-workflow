@@ -22,7 +22,7 @@
 #   REPO       — path to this repo (default: parent of scripts/)
 #   HERMES     — path to ~/.hermes (default: $HOME/.hermes)
 #   HERMES_BIN — path to hermes CLI (default: $HOME/.local/bin/hermes)
-#   HOST_NAME  — host directory under hosts/ (default: example-host)
+#   HOST_NAME  — host directory under hosts/ (default: hostname -s)
 #
 # Exit codes:
 #   0 — all healthy (or fixed in place)
@@ -34,7 +34,7 @@ set -euo pipefail
 REPO="${REPO:-$(cd "$(dirname "$0")/.." && pwd)}"
 HERMES="${HERMES:-$HOME/.hermes}"
 HERMES_BIN="${HERMES_BIN:-$HOME/.local/bin/hermes}"
-HOST_NAME="${HOST_NAME:-example-host}"
+HOST_NAME="${HOST_NAME:-$(hostname -s 2>/dev/null || echo example-host)}"
 
 # Accumulators so we can summarize at the end.
 ISSUES=()   # warnings / things to surface
