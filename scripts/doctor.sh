@@ -158,20 +158,53 @@ if [[ -n "${cwd_value:-}" && "${cwd_value}" != "." ]]; then
   fi
 fi
 
-# memory.provider set? (sanity — if user configured hindsight we want
-# to notice if it got cleared accidentally).
-provider=$( (grep -E '^\s*provider:\s*' "${HERMES}/config.yaml" 2>/dev/null || true) | head -1 | awk '{print $2}' | tr -d "'\"")
-if [[ -n "${provider:-}" && "${provider}" == "hindsight" ]]; then
+# memory.provider set? Parse only the memory: block. A plain grep for
+# provider: catches model.provider first, which lets Hermes fall back to
+# built-in memory while the Hindsight server looks healthy.
+memory_provider=$(awk '
+  /^[[:space:]]*memory:[[:space:]]*$/ { in_memory=1; next }
+  in_memory && /^[^[:space:]#]/ { in_memory=0 }
+  in_memory && /^[[:space:]]+provider:[[:space:]]*/ {
+    sub(/^[[:space:]]+provider:[[:space:]]*/, "")
+    gsub(/["'\'']/, "")
+    print
+    exit
+  }
+' "${HERMES}/config.yaml" 2>/dev/null || true)
+
+hindsight_mode=$(python3 -c "import json; print(json.loads(open('${HERMES}/hindsight/config.json').read()).get('mode',''))" 2>/dev/null || echo "")
+hindsight_expected=0
+if [[ -f "${HERMES}/hindsight/config.json" ]] \
+    || systemctl --user is-enabled hindsight-server.service >/dev/null 2>&1 \
+    || systemctl --user is-active hindsight-server.service >/dev/null 2>&1; then
+  hindsight_expected=1
+fi
+
+if [[ "${hindsight_expected}" == "1" && "${memory_provider:-}" != "hindsight" ]]; then
+  ISSUES+=("hindsight: server/config present but memory.provider is '${memory_provider:-unset}' — Hermes will use built-in memory only; run: hermes config set memory.provider hindsight")
+fi
+
+if [[ -n "${memory_provider:-}" && "${memory_provider}" == "hindsight" ]]; then
   # Ensure the LLM key for hindsight is present.
   if ! grep -q '^HINDSIGHT_API_LLM_API_KEY=' "${HERMES}/.env" 2>/dev/null; then
     ISSUES+=("hindsight: memory.provider=hindsight but HINDSIGHT_API_LLM_API_KEY missing from .env")
+  fi
+
+  if [[ -x "${HERMES_BIN}" ]]; then
+    memory_status="$("${HERMES_BIN}" memory status 2>/dev/null || true)"
+    if ! grep -qE 'Provider:[[:space:]]+hindsight' <<<"${memory_status}"; then
+      ISSUES+=("hindsight: hermes memory status does not show hindsight as active")
+    elif ! grep -qE 'Status:[[:space:]]+available' <<<"${memory_status}"; then
+      ISSUES+=("hindsight: hermes memory status does not show the hindsight plugin as available")
+    fi
+  else
+    ISSUES+=("hindsight: cannot verify provider status because HERMES_BIN is not executable: ${HERMES_BIN}")
   fi
 
   # If hindsight is configured for local_external mode, the slim API
   # server needs to be running and answering /health. The systemd unit
   # is hindsight-server.service. Surface stalls as a doctor warning
   # rather than letting recall silently fail in hermes-gateway.
-  hindsight_mode=$(python3 -c "import json; print(json.loads(open('${HERMES}/hindsight/config.json').read()).get('mode',''))" 2>/dev/null || echo "")
   if [[ "${hindsight_mode}" == "local_external" ]]; then
     if ! systemctl --user is-active hindsight-server.service >/dev/null 2>&1; then
       ISSUES+=("hindsight: mode=local_external but hindsight-server.service is not active")
