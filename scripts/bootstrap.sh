@@ -445,6 +445,35 @@ link_dir() {
   ok "linked ${live}/ → ${src}/"
 }
 
+link_external_dir() {
+  # link_external_dir <repo-relative-dir> <absolute-live-dir>
+  # Same semantics as link_dir, for tool config outside ~/.hermes.
+  local src="${REPO}/$1" live="$2"
+  if [[ ! -d "${src}" ]]; then
+    return
+  fi
+  if [[ -L "${live}" ]]; then
+    local current; current="$(readlink "${live}")"
+    if [[ "${current}" == "${src}" ]]; then
+      ok "${live} already linked"
+      return
+    fi
+    warn "relinking ${live} (was → ${current})"
+    rm "${live}"
+  elif [[ -d "${live}" ]] && [[ -n "$(ls -A "${live}" 2>/dev/null)" ]]; then
+    warn "${live} exists with content — leaving as-is (manual migration if you want it versioned)"
+    return
+  elif [[ -e "${live}" ]]; then
+    warn "${live} is a regular file — leaving as-is"
+    return
+  elif [[ -d "${live}" ]]; then
+    rmdir "${live}" 2>/dev/null || true
+  fi
+  mkdir -p "$(dirname "${live}")"
+  ln -s "${src}" "${live}"
+  ok "linked ${live}/ → ${src}/"
+}
+
 link_secret() {
   # link_secret <repo-relative-target> <hermes-relative-target>
   # Symlinks an encrypted-at-rest file (or one prompted-into during
@@ -495,6 +524,7 @@ link_dir "hermes-runtime-scripts"  "scripts"
 # the symlink works the same; encryption applies in git history).
 link_dir "whatsapp"           "whatsapp"
 link_dir "pairing"            "pairing"
+link_external_dir "gogcli"    "${HOME}/.config/gogcli"
 
 # Encrypted secrets — created later by bootstrap §7 (.env) or by user
 # action (auth.json from `hermes auth`, OAuth tokens via gog/google-workspace).

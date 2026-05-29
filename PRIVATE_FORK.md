@@ -44,6 +44,8 @@ on disk.
 - initializes/unlocks git-crypt
 - copies live `~/.hermes/.env` and known OAuth/session files into
   encrypted repo paths, then relinks them back into `~/.hermes`
+- copies live `~/.config/gogcli` into encrypted `gogcli/**`, then
+  relinks it so Google/Drive/Gmail OAuth survives host replacement
 - moves public-template local host memory into encrypted
   `hosts/<host>/claude-code-memory/`
 - sets `ACTIVE_HOST`

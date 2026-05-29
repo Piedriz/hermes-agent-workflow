@@ -60,6 +60,7 @@ listed here is **not** in your backup. The columns:
 | `auth.json`                           | `~/.hermes/auth.json`                 | **yes**   | shared   | Sidekick / hermes auth state. |
 | `google_client_secret.json`           | `~/.hermes/google_client_secret.json` | **yes**   | shared   | Google OAuth client (if you wire up Gmail / Calendar). |
 | `google_token.json`                   | `~/.hermes/google_token.json`         | **yes**   | shared   | Google OAuth refresh tokens. |
+| `gogcli/**`                           | `~/.config/gogcli/`                   | **yes**   | shared   | gog CLI account config, OAuth credentials, keyring tokens, and keyring password. |
 | `whatsapp/session/**`                 | `~/.hermes/whatsapp/session/`         | **yes**   | shared   | Baileys session credentials. Losing these means QR-rescan from the phone. |
 | `pairing/**`                          | `~/.hermes/pairing/`                  | **yes**   | shared   | Sidekick PWA pairing tokens. |
 | `sessions/**`                         | (export target from Hermes CLI)       | **yes**   | shared   | Exported Hermes session transcripts from `scripts/sync-hermes.sh`. |

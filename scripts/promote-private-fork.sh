@@ -191,7 +191,10 @@ copy_dir_from_live() {
   fi
   mkdir -p "$dest"
   rsync -a "$live"/ "$dest"/
-  if [[ ! -L "$live" ]]; then
+  if [[ -L "$live" ]]; then
+    rm "$live"
+    ln -s "$dest" "$live"
+  else
     mv "$live" "$live.pre-private-promote.$(date +%Y%m%d-%H%M%S)"
     ln -s "$dest" "$live"
   fi
@@ -216,6 +219,7 @@ for secret in auth.json google_client_secret.json google_token.json; do
 done
 copy_dir_from_live "$HOME/.hermes/whatsapp/session" "whatsapp/session" "WhatsApp session"
 copy_dir_from_live "$HOME/.hermes/pairing" "pairing" "Sidekick pairing"
+copy_dir_from_live "$HOME/.config/gogcli" "gogcli" "gogcli config/keyring"
 copy_dir_from_live "$HOME/.hermes/host-state/$HOST_NAME/claude-code-memory" "hosts/$HOST_NAME/claude-code-memory" "Claude Code host memory"
 
 printf 'active_host=%s\n' "$HOST_NAME" > "$REPO/ACTIVE_HOST"
