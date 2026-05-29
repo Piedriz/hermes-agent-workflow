@@ -310,7 +310,10 @@ self-signed certificate warning. Access control for that URL is your
 tailnet ACL; restrict `<host>:3001` there if the agent should be
 user-only on a wider tailnet. Bootstrap installs, enables, and starts
 the user-level systemd services so the stack comes back after reboot
-when user lingering is enabled for the account.
+when user lingering is enabled for the account. Those units also set
+`HERMES_BUNDLED_SKILLS` to the workflow-managed skills tree so normal
+service startup does not rewrite the checkout when upstream Hermes
+bundled skills drift.
 
 ---
 

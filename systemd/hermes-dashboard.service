@@ -18,6 +18,8 @@ ExecStart=/bin/sh -c '%h/.local/bin/hermes dashboard --host ${HERMES_DASHBOARD_H
 Restart=on-failure
 RestartSec=5
 Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+# Keep Hermes' startup skill sync from rewriting the workflow checkout.
+Environment=HERMES_BUNDLED_SKILLS=%h/.hermes/skills
 # Point hermes at the prebuilt web UI so it doesn't re-run `npm run build`
 # (tsc + vite) on every service start — that's a minutes-long CPU burn on the Pi.
 Environment=HERMES_WEB_DIST=%h/.hermes/hermes-agent/hermes_cli/web_dist
