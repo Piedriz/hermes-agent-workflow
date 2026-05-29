@@ -113,7 +113,8 @@ for tbl in "${small_tables[@]}"; do
       --username="${PGUSER}" --dbname="${PGDATABASE}" \
       --data-only --column-inserts \
       --table="public.${tbl}" \
-    | grep -E "^INSERT INTO public\\.${tbl} " \
+    | awk -v prefix="INSERT INTO public.${tbl} " \
+        'index($0, prefix) == 1 { print }' \
     | LC_ALL=C sort \
     > "${tmp}"
   mv "${tmp}" "${out}"
