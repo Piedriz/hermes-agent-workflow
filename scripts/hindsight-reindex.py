@@ -24,6 +24,8 @@ Run with:
 from __future__ import annotations
 
 import argparse
+import asyncio
+import inspect
 import json
 import os
 import sqlite3
@@ -243,6 +245,18 @@ def main() -> int:
     else:
         client = None
 
+    def close_client() -> None:
+        if client is None:
+            return
+        close = getattr(client, "close", None)
+        if not callable(close):
+            close = getattr(client, "aclose", None)
+        if not callable(close):
+            return
+        result = close()
+        if inspect.isawaitable(result):
+            asyncio.run(result)
+
     def flush() -> None:
         nonlocal retained, last_id
         if not items:
@@ -272,28 +286,31 @@ def main() -> int:
 
     t0 = time.time()
     try:
-        for row in enumerate_messages(conn, after_id=after_id, since_ts=since_ts, limit=args.limit):
-            content = (row["content"] or "").strip()
-            if any(content.startswith(p) for p in SKIP_CONTENT_PREFIXES):
-                skipped += 1
-                continue
-            items.append(build_item(
-                msg_id=row["id"],
-                session_id=row["session_id"],
-                role=row["role"],
-                content=content,
-                timestamp=row["timestamp"],
-                source=row["source"],
-                title=row["title"],
-            ))
-            item_ids.append(row["id"])
-            if len(items) >= args.batch:
-                flush()
-        flush()  # drain tail
-    except KeyboardInterrupt:
-        print("[reindex] interrupted — checkpoint preserved; rerun with --resume",
-              file=sys.stderr)
-        return 130
+        try:
+            for row in enumerate_messages(conn, after_id=after_id, since_ts=since_ts, limit=args.limit):
+                content = (row["content"] or "").strip()
+                if any(content.startswith(p) for p in SKIP_CONTENT_PREFIXES):
+                    skipped += 1
+                    continue
+                items.append(build_item(
+                    msg_id=row["id"],
+                    session_id=row["session_id"],
+                    role=row["role"],
+                    content=content,
+                    timestamp=row["timestamp"],
+                    source=row["source"],
+                    title=row["title"],
+                ))
+                item_ids.append(row["id"])
+                if len(items) >= args.batch:
+                    flush()
+            flush()  # drain tail
+        except KeyboardInterrupt:
+            print("[reindex] interrupted — checkpoint preserved; rerun with --resume",
+                  file=sys.stderr)
+            return 130
+    finally:
+        close_client()
 
     dt = time.time() - t0
     print(f"[reindex] done. retained={retained} skipped={skipped} "
