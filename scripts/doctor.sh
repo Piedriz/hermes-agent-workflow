@@ -63,16 +63,15 @@ check_symlink() {
   FIXED+=("symlink: ${label}")
 }
 
-check_symlink "${HERMES}/config.yaml"             "${REPO}/hermes.config.yaml"       "hermes config"
-check_symlink "${HERMES}/AGENTS.md"               "${REPO}/AGENTS.md"                "AGENTS.md"
-check_symlink "${HERMES}/SOUL.md"                 "${REPO}/SOUL.md"                  "SOUL.md"
-check_symlink "${HERMES}/hindsight/config.json"   "${REPO}/hindsight.config.json"    "hindsight config"
+check_symlink "${HERMES}/config.yaml"             "${REPO}/example.config.yaml"            "hermes config"
+check_symlink "${HERMES}/AGENTS.md"               "${REPO}/example.AGENTS.md"              "AGENTS.md"
+check_symlink "${HERMES}/SOUL.md"                 "${REPO}/SOUL.md.template"               "SOUL.md"
+check_symlink "${HERMES}/hindsight/config.json"   "${REPO}/example.hindsight.config.json"  "hindsight config"
 # channel_directory.json was previously symlinked here, but the gateway
 # atomic-writes it every 5 min via os.replace, which nukes the symlink
 # regardless of how often we re-heal. It's runtime cache (rebuilt on
 # gateway start), not config — versioning it had no archival value and
 # created continuous doctor.log churn. Now untracked and gitignored.
-check_symlink "${HERMES}/gateway_voice_mode.json" "${REPO}/gateway_voice_mode.json"  "gateway_voice_mode.json"
 # Directory symlinks — hermes tools occasionally replace these wholesale
 # (atomic rename of a dir during cleanup); warn but don't auto-heal,
 # since restoring a directory symlink without losing in-place edits
@@ -96,10 +95,30 @@ check_service() {
   fi
 }
 check_service hermes-gateway
+check_service hermes-dashboard
+check_service hindsight-server
 check_service sidekick
 
-# ── 3. WhatsApp bridge reachable (best-effort; daemon may be idle) ────
-if systemctl --user is-active hermes-gateway >/dev/null 2>&1; then
+if ! curl -fsS --max-time 3 http://127.0.0.1:8642/health >/dev/null 2>&1; then
+  ISSUES+=("gateway: /health not responding on 127.0.0.1:8642")
+fi
+if ! curl -fsS --max-time 3 http://127.0.0.1:8765/health >/dev/null 2>&1; then
+  ISSUES+=("hindsight: /health not responding on 127.0.0.1:8765")
+fi
+sidekick_token=$(grep -E '^SIDEKICK_PLATFORM_TOKEN=' "${HERMES}/.env" 2>/dev/null | cut -d= -f2- | tr -d '"' | head -1)
+if [[ -z "${sidekick_token}" ]]; then
+  ISSUES+=("sidekick plugin: SIDEKICK_PLATFORM_TOKEN missing from ${HERMES}/.env")
+elif ! curl -fsS --max-time 3 -H "Authorization: Bearer ${sidekick_token}" \
+    http://127.0.0.1:8645/v1/health >/dev/null 2>&1; then
+  ISSUES+=("sidekick plugin: /v1/health not responding on 127.0.0.1:8645")
+fi
+if ! curl -fsS --max-time 3 http://127.0.0.1:3001/ >/dev/null 2>&1; then
+  ISSUES+=("sidekick: proxy not responding on 127.0.0.1:3001")
+fi
+
+# ── 3. WhatsApp bridge reachable (best-effort; only if configured) ───
+if grep -qE '^WHATSAPP_' "${HERMES}/.env" 2>/dev/null \
+    && systemctl --user is-active hermes-gateway >/dev/null 2>&1; then
   if ! curl -sf --max-time 2 http://localhost:3000/health >/dev/null 2>&1; then
     ISSUES+=("whatsapp bridge: /health not responding on :3000")
   fi
@@ -141,8 +160,8 @@ fi
 provider=$(grep -E '^\s*provider:\s*' "${HERMES}/config.yaml" 2>/dev/null | head -1 | awk '{print $2}' | tr -d "'\"")
 if [[ -n "${provider:-}" && "${provider}" == "hindsight" ]]; then
   # Ensure the LLM key for hindsight is present.
-  if ! grep -q '^HINDSIGHT_LLM_API_KEY=' "${HERMES}/.env" 2>/dev/null; then
-    ISSUES+=("hindsight: memory.provider=hindsight but HINDSIGHT_LLM_API_KEY missing from .env")
+  if ! grep -q '^HINDSIGHT_API_LLM_API_KEY=' "${HERMES}/.env" 2>/dev/null; then
+    ISSUES+=("hindsight: memory.provider=hindsight but HINDSIGHT_API_LLM_API_KEY missing from .env")
   fi
 
   # If hindsight is configured for local_external mode, the slim API
@@ -159,32 +178,7 @@ if [[ -n "${provider:-}" && "${provider}" == "hindsight" ]]; then
   fi
 fi
 
-# ── 5. Local hermes patches ───────────────────────────────────────────
-# The WhatsApp sender-prefix patch lives on a local branch of the
-# installed hermes-agent checkout (editable install). Warn if the
-# marker line is missing — someone could have switched branches,
-# force-reset main, or an upstream upgrade could have relocated the
-# code we patched. Do NOT auto-reapply; we want a human review.
-WA_PATCH_FILE="${HERMES}/hermes-agent/gateway/platforms/whatsapp.py"
-if [[ -f "${WA_PATCH_FILE}" ]]; then
-  if ! grep -q 'if is_group and body:' "${WA_PATCH_FILE}" 2>/dev/null; then
-    ISSUES+=("hermes: whatsapp sender-prefix patch missing from ${WA_PATCH_FILE} (local/whatsapp-sender-prefix branch dropped?)")
-  fi
-fi
-
-# Companion patch in the WhatsApp bridge: the fromMe+isGroup early-bail
-# was removed so the owner can @mention the bot in their own groups.
-# Marker = the fixup block starting with "if (!isGroup) {" inside the
-# fromMe handler. If upstream ever rewrites the fromMe path, this grep
-# will miss and the warning will fire — which is what we want.
-WA_BRIDGE_FILE="${HERMES}/hermes-agent/scripts/whatsapp-bridge/bridge.js"
-if [[ -f "${WA_BRIDGE_FILE}" ]]; then
-  if ! grep -q 'never process status broadcasts' "${WA_BRIDGE_FILE}" 2>/dev/null; then
-    ISSUES+=("hermes: whatsapp-bridge fromMe+isGroup patch missing from ${WA_BRIDGE_FILE} (local/whatsapp-sender-prefix branch dropped?)")
-  fi
-fi
-
-# ── 5b. CC sync freshness ─────────────────────────────────────────────
+# ── 5. CC sync freshness ──────────────────────────────────────────────
 # sync-cc-history.sh runs every 15 min via cron, committing snapshots
 # with a "sync: cc history snapshot ..." subject. If no such commit has
 # landed in the last 30 min AND the MEMORY.md marker is missing, the cron

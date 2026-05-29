@@ -77,7 +77,7 @@ so stale assumptions never silently land.
 - Patches that touched the WebRTC subsystem are intentionally NOT
   included anywhere in this template — the WebRTC stack moved out of
   hermes-agent into the sidekick repo (`audio-bridge/`).
-- The sidekick-platform adapter patch (needed for sidekick ↔ hermes
-  integration) lives in the sidekick repo itself
-  (`backends/hermes/plugin/0001-add-sidekick-platform.patch`), not
-  here. It's applied by sidekick's own install script.
+- Sidekick ↔ Hermes integration is through the first-class Sidekick
+  Hermes plugin at `sidekick/backends/hermes/plugin`. `bootstrap.sh`
+  symlinks that plugin into `~/.hermes/plugins/sidekick` and enables it
+  in config. No core hermes patch is expected for a fresh install.

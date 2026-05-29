@@ -9,7 +9,7 @@ Wants=network-online.target
 [Service]
 Type=simple
 EnvironmentFile=%h/.hermes/.env
-ExecStart=%h/.hermes/hindsight-server-venv/bin/hindsight-api --host 127.0.0.1 --port 8765 --log-level info
+ExecStart=%h/.hermes/hindsight-venv/bin/hindsight-api --host 127.0.0.1 --port 8765 --log-level info
 Restart=on-failure
 RestartSec=10
 # Bind to loopback only — the slim server has no auth layer in this

@@ -6,7 +6,9 @@
 # (NOT in this repo). Restoring on a fresh machine: copy this to
 # ~/.hermes/config.yaml, then hand-edit or repopulate secrets via `hermes login`.
 #
-model: google/gemma-4-26b-a4b-it
+model:
+  provider: openai-api
+  default: gpt-5.4-mini
 terminal:
   backend: local
   cwd: .
@@ -93,6 +95,9 @@ platform_toolsets:
   yuanbao: [hermes-yuanbao]
   teams: [hermes-teams]
   google_chat: [hermes-google_chat]
+plugins:
+  enabled:
+    - sidekick
 
 # WhatsApp adapter config (consumed when the gateway-bridge loads the
 # WhatsApp platform). All fields are optional; fill in values that match

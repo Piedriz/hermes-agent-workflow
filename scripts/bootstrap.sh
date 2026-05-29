@@ -59,9 +59,12 @@ Recognized variables (set via env or env-file):
   SIDEKICK_TLS_DIR       fallback HTTPS cert/key dir; default: ~/.local/share/sidekick/tls
   HERMES_HOME            hermes home; default: ~/.hermes
   AGENT_LAT, AGENT_LON   ambient weather coords; optional
-  DEEPGRAM_API_KEY       required (unless ~/.hermes/.env already has it)
-  OPENROUTER_API_KEY     required (unless ~/.hermes/.env already has it)
+  OPENAI_API_KEY         required (unless ~/.hermes/.env already has it)
+  DEEPGRAM_API_KEY       optional (voice STT; unless ~/.hermes/.env already has it)
+  OPENROUTER_API_KEY     optional alternate LLM provider key
   TAVILY_API_KEY         optional (enables web_search tool); skip with empty value
+  INSTALL_SIDEKICK_AUDIO_BRIDGE
+                         auto by default; skips Pi/ARM unless set to 1
 EOF
       exit 0 ;;
     *) echo "unknown arg: $1" >&2; exit 2 ;;
@@ -230,9 +233,12 @@ prompt_default AGENT_LON      "agent longitude (for ambient weather widget, opti
 # Make sure HERMES_HOME exists before we look in it for an existing .env.
 mkdir -p "${HERMES_HOME}"
 
-# Secret prompts — only ask if .env doesn't already have them
-prompt_secret  DEEPGRAM_API_KEY    "Deepgram API key (for STT)"                    --required
-prompt_secret  OPENROUTER_API_KEY  "OpenRouter API key (for LLM access)"           --required
+# Secret prompts — only ask if .env doesn't already have them.
+# OpenAI API is the primary virgin-install path because it covers both
+# Hermes model access and the Hindsight memory server defaults.
+prompt_secret  OPENAI_API_KEY      "OpenAI API key (for LLM + Hindsight)"          --required
+prompt_secret  DEEPGRAM_API_KEY    "Deepgram API key (for STT, optional)"
+prompt_secret  OPENROUTER_API_KEY  "OpenRouter API key (optional alternate LLM provider)"
 # Optional: empty value skips. The web_search tool auto-detects this in
 # hermes via TAVILY_API_KEY; absent → tool not registered.
 prompt_secret  TAVILY_API_KEY      "Tavily API key (for web_search, optional)"
@@ -252,6 +258,22 @@ else
   mkdir -p "$(dirname "${SIDEKICK_PATH}")"
   git clone https://github.com/jscholz/sidekick "${SIDEKICK_PATH}"
   ok "sidekick cloned"
+fi
+
+if [[ -f "${SIDEKICK_PATH}/package.json" ]]; then
+  if [[ -d "${SIDEKICK_PATH}/node_modules" ]]; then
+    ok "sidekick Node dependencies already installed"
+  elif [[ -f "${SIDEKICK_PATH}/package-lock.json" ]]; then
+    info "installing sidekick Node dependencies with npm ci"
+    (cd "${SIDEKICK_PATH}" && npm ci)
+    ok "sidekick Node dependencies installed"
+  else
+    info "installing sidekick Node dependencies with npm install"
+    (cd "${SIDEKICK_PATH}" && npm install)
+    ok "sidekick Node dependencies installed"
+  fi
+else
+  warn "sidekick package.json not found at ${SIDEKICK_PATH} — service start will likely fail"
 fi
 
 # Sidekick voice capture, push, PWA install behavior, and WebRTC require
@@ -555,20 +577,63 @@ fi
 info "installing ${HERMES_AGENT_REPO} (editable) into ${HERMES_VENV}"
 uv pip install --python "${HERMES_VENV}/bin/python" -e "${HERMES_AGENT_REPO}"
 
-# TODO(jscholz): hindsight package choice — hardcoded hindsight-api-slim
-# for v0. If you want full hindsight (heavy: torch + embedders), swap
-# the line below to 'hindsight-api[embedded-db]' or similar.
-ensure_venv "${HERMES_HOME}/hindsight-venv" "hindsight-api-slim"
+# Dashboard and Sidekick plugin dependencies are not always pulled in by
+# the base hermes editable install. Install them explicitly so the
+# systemd services work on a bare server image.
+info "installing dashboard + sidekick plugin dependencies into ${HERMES_VENV}"
+uv pip install --python "${HERMES_VENV}/bin/python" fastapi uvicorn py-vapid pywebpush websockets
+
+# Several hermes helper paths and older doctor scripts expect the venv
+# under ~/.hermes/hermes-agent/venv. Keep that compatibility link while
+# making ~/.hermes/hermes-venv the real venv.
+HERMES_AGENT_VENV_LINK="${HERMES_AGENT_REPO}/venv"
+if [[ -L "${HERMES_AGENT_VENV_LINK}" || ! -e "${HERMES_AGENT_VENV_LINK}" ]]; then
+  ln -sfn "${HERMES_VENV}" "${HERMES_AGENT_VENV_LINK}"
+  ok "linked ${HERMES_AGENT_VENV_LINK} → ${HERMES_VENV}"
+else
+  warn "${HERMES_AGENT_VENV_LINK} exists and is not a symlink — leaving as-is"
+fi
+mkdir -p "${HOME}/.local/bin"
+HERMES_BIN_LINK="${HOME}/.local/bin/hermes"
+if [[ -L "${HERMES_BIN_LINK}" || ! -e "${HERMES_BIN_LINK}" ]]; then
+  ln -sfn "${HERMES_AGENT_VENV_LINK}/bin/hermes" "${HERMES_BIN_LINK}"
+  ok "linked ${HERMES_BIN_LINK} → ${HERMES_AGENT_VENV_LINK}/bin/hermes"
+else
+  warn "${HERMES_BIN_LINK} exists and is not a symlink — leaving as-is"
+fi
+
+# Hindsight slim needs the embedded Postgres extra for the local memory
+# API server path used by this workflow.
+ensure_venv "${HERMES_HOME}/hindsight-venv" "hindsight-api-slim[embedded-db]"
+if [[ -L "${HERMES_HOME}/hindsight-server-venv" || ! -e "${HERMES_HOME}/hindsight-server-venv" ]]; then
+  ln -sfn "${HERMES_HOME}/hindsight-venv" "${HERMES_HOME}/hindsight-server-venv"
+  ok "linked ${HERMES_HOME}/hindsight-server-venv → ${HERMES_HOME}/hindsight-venv"
+fi
 
 # Audio bridge: lives inside sidekick repo; uv venv created in-place.
 AUDIO_BRIDGE_DIR="${SIDEKICK_PATH}/audio-bridge"
-if [[ -d "${AUDIO_BRIDGE_DIR}" ]]; then
+INSTALL_SIDEKICK_AUDIO_BRIDGE="${INSTALL_SIDEKICK_AUDIO_BRIDGE:-auto}"
+SIDEKICK_AUDIO_ENABLED=0
+case "${INSTALL_SIDEKICK_AUDIO_BRIDGE}" in
+  1|true|TRUE|yes|YES) SIDEKICK_AUDIO_ENABLED=1 ;;
+  0|false|FALSE|no|NO) SIDEKICK_AUDIO_ENABLED=0 ;;
+  auto)
+    case "$(uname -m)" in
+      arm64|aarch64|armv*) SIDEKICK_AUDIO_ENABLED=0 ;;
+      *) SIDEKICK_AUDIO_ENABLED=1 ;;
+    esac
+    ;;
+  *) warn "unknown INSTALL_SIDEKICK_AUDIO_BRIDGE=${INSTALL_SIDEKICK_AUDIO_BRIDGE}; defaulting to disabled" ;;
+esac
+if [[ -d "${AUDIO_BRIDGE_DIR}" && "${SIDEKICK_AUDIO_ENABLED}" == "1" ]]; then
   if [[ -x "${AUDIO_BRIDGE_DIR}/.venv/bin/python" ]]; then
     ok "audio-bridge venv exists"
   else
     info "creating audio-bridge venv"
     (cd "${AUDIO_BRIDGE_DIR}" && uv venv && uv pip install -r requirements.txt)
   fi
+elif [[ -d "${AUDIO_BRIDGE_DIR}" ]]; then
+  warn "skipping sidekick audio bridge on this host. Set INSTALL_SIDEKICK_AUDIO_BRIDGE=1 to install it explicitly."
 else
   warn "audio-bridge dir not found at ${AUDIO_BRIDGE_DIR} — skipping"
 fi
@@ -596,7 +661,45 @@ else
   warn "${HERMES_VENV} not present — skip hindsight-client install"
 fi
 
-# ── 5c. Claude-Code memory dir (with resume protocol) ────────────────
+# ── 5c. Sidekick hermes plugin ───────────────────────────────────────
+# Sidekick's current Hermes integration is a first-class plugin under
+# the sidekick checkout. No core hermes patch should be needed for a
+# fresh install; expose the plugin through ~/.hermes/plugins and make
+# sure the default config enables it.
+section "Sidekick Hermes plugin"
+
+SIDEKICK_PLUGIN_SRC="${SIDEKICK_PATH}/backends/hermes/plugin"
+SIDEKICK_PLUGIN_DST="${HERMES_HOME}/plugins/sidekick"
+if [[ -d "${SIDEKICK_PLUGIN_SRC}" ]]; then
+  mkdir -p "$(dirname "${SIDEKICK_PLUGIN_DST}")"
+  if [[ -L "${SIDEKICK_PLUGIN_DST}" || ! -e "${SIDEKICK_PLUGIN_DST}" ]]; then
+    ln -sfn "${SIDEKICK_PLUGIN_SRC}" "${SIDEKICK_PLUGIN_DST}"
+    ok "linked ${SIDEKICK_PLUGIN_DST} → ${SIDEKICK_PLUGIN_SRC}"
+  else
+    warn "${SIDEKICK_PLUGIN_DST} exists and is not a symlink — leaving as-is"
+  fi
+else
+  warn "Sidekick Hermes plugin not found at ${SIDEKICK_PLUGIN_SRC}; pull the latest sidekick repo and rerun bootstrap"
+fi
+
+CONFIG_FILE="${HERMES_HOME}/config.yaml"
+if [[ -f "${CONFIG_FILE}" ]]; then
+  if grep -qE '^[[:space:]]*-[[:space:]]*sidekick[[:space:]]*$' "${CONFIG_FILE}"; then
+    ok "sidekick plugin already enabled in ${CONFIG_FILE}"
+  elif ! grep -qE '^plugins:' "${CONFIG_FILE}"; then
+    cat >> "${CONFIG_FILE}" <<'EOF'
+
+plugins:
+  enabled:
+    - sidekick
+EOF
+    ok "enabled sidekick plugin in ${CONFIG_FILE}"
+  else
+    warn "${CONFIG_FILE} already has a plugins block; add 'sidekick' under plugins.enabled if it is not present"
+  fi
+fi
+
+# ── 5d. Claude-Code memory dir (with resume protocol) ────────────────
 # Each host's claude-code memory dir lives under hosts/<host>/claude-code-memory/
 # in the workflow repo. We seed it from templates/claude-code-memory/
 # (RESUME.md stub + feedback_resume_protocol.md) so a fresh-host claude
@@ -717,7 +820,13 @@ render_unit "systemd/sidekick.service"         "sidekick.service"
 # $HOME at unit-load time, so it works as-is across hosts.
 SIDEKICK_AUDIO_SRC="${SIDEKICK_PATH}/audio-bridge/sidekick-audio.service"
 SIDEKICK_AUDIO_DST="${SYSTEMD_DST}/sidekick-audio.service"
-if [[ -f "${SIDEKICK_AUDIO_SRC}" ]]; then
+if [[ "${SIDEKICK_AUDIO_ENABLED:-0}" != "1" ]]; then
+  if [[ -L "${SIDEKICK_AUDIO_DST}" ]]; then
+    rm "${SIDEKICK_AUDIO_DST}"
+    ok "removed disabled ${SIDEKICK_AUDIO_DST}"
+  fi
+  warn "sidekick audio bridge disabled for this install — skipping unit link"
+elif [[ -f "${SIDEKICK_AUDIO_SRC}" ]]; then
   if [[ -L "${SIDEKICK_AUDIO_DST}" ]]; then
     current="$(readlink "${SIDEKICK_AUDIO_DST}")"
     if [[ "${current}" != "${SIDEKICK_AUDIO_SRC}" ]]; then
@@ -767,11 +876,63 @@ write_env() {
   fi
 }
 
-write_env DEEPGRAM_API_KEY    "${DEEPGRAM_API_KEY}"
-write_env OPENROUTER_API_KEY  "${OPENROUTER_API_KEY}"
+env_value() {
+  # env_value <KEY>
+  local key="$1"
+  [[ -f "${ENV_FILE}" ]] || return 0
+  awk -F= -v key="${key}" '$1 == key { print substr($0, length(key) + 2) }' "${ENV_FILE}" | tail -n 1
+}
+
+ensure_env_default() {
+  # ensure_env_default <KEY> <VALUE>
+  local key="$1" val="$2"
+  [[ -z "${val}" ]] && return
+  if grep -qE "^${key}=" "${ENV_FILE}"; then
+    return
+  fi
+  write_env "${key}" "${val}"
+}
+
+write_env OPENAI_API_KEY      "${OPENAI_API_KEY:-}"
+write_env DEEPGRAM_API_KEY    "${DEEPGRAM_API_KEY:-}"
+write_env OPENROUTER_API_KEY  "${OPENROUTER_API_KEY:-}"
 write_env TAVILY_API_KEY      "${TAVILY_API_KEY:-}"
 [[ -n "${AGENT_LAT}" ]] && write_env AGENT_LAT "${AGENT_LAT}"
 [[ -n "${AGENT_LON}" ]] && write_env AGENT_LON "${AGENT_LON}"
+
+OPENAI_KEY_FOR_DEFAULTS="${OPENAI_API_KEY:-}"
+[[ "${OPENAI_KEY_FOR_DEFAULTS}" == "__KEEP__" ]] && OPENAI_KEY_FOR_DEFAULTS="$(env_value OPENAI_API_KEY)"
+ensure_env_default HINDSIGHT_API_LLM_PROVIDER "openai"
+ensure_env_default HINDSIGHT_API_LLM_MODEL "gpt-4o-mini"
+ensure_env_default HINDSIGHT_API_EMBEDDINGS_PROVIDER "openai"
+ensure_env_default HINDSIGHT_API_EMBEDDINGS_OPENAI_MODEL "text-embedding-3-small"
+ensure_env_default HINDSIGHT_API_RERANKER_PROVIDER "rrf"
+if [[ -n "${OPENAI_KEY_FOR_DEFAULTS}" ]]; then
+  ensure_env_default HINDSIGHT_API_LLM_API_KEY "${OPENAI_KEY_FOR_DEFAULTS}"
+  ensure_env_default HINDSIGHT_API_EMBEDDINGS_OPENAI_API_KEY "${OPENAI_KEY_FOR_DEFAULTS}"
+else
+  warn "OPENAI_API_KEY not available for Hindsight defaults; memory server may need manual auth config"
+fi
+
+API_SERVER_KEY_VALUE="${API_SERVER_KEY:-$(env_value API_SERVER_KEY)}"
+if [[ -z "${API_SERVER_KEY_VALUE}" ]]; then
+  API_SERVER_KEY_VALUE="$(openssl rand -hex 32)"
+fi
+write_env API_SERVER_KEY "${API_SERVER_KEY_VALUE}"
+
+SIDEKICK_PLATFORM_TOKEN_VALUE="${SIDEKICK_PLATFORM_TOKEN:-$(env_value SIDEKICK_PLATFORM_TOKEN)}"
+if [[ -z "${SIDEKICK_PLATFORM_TOKEN_VALUE}" ]]; then
+  SIDEKICK_PLATFORM_TOKEN_VALUE="$(openssl rand -hex 32)"
+fi
+write_env SIDEKICK_PLATFORM_TOKEN "${SIDEKICK_PLATFORM_TOKEN_VALUE}"
+ensure_env_default SIDEKICK_PLATFORM_ALLOW_ALL_USERS "${SIDEKICK_PLATFORM_ALLOW_ALL_USERS:-true}"
+[[ -n "${TAILSCALE_DNS}" ]] && ensure_env_default HERMES_DASHBOARD_HOST "${TAILSCALE_DNS}"
+
+write_sidekick_env SIDEKICK_PLATFORM_URL "http://127.0.0.1:8645"
+write_sidekick_env SIDEKICK_PLATFORM_TOKEN "${SIDEKICK_PLATFORM_TOKEN_VALUE}"
+write_sidekick_env SIDEKICK_PLATFORM_ALLOW_ALL_USERS "${SIDEKICK_PLATFORM_ALLOW_ALL_USERS:-true}"
+write_sidekick_env SIDEKICK_PUSH_OWNED_BY_PLUGIN "true"
+write_sidekick_env SIDEKICK_INFLIGHT_OWNED_BY_PLUGIN "true"
 ok "secrets written to ${ENV_FILE} (mode 600)"
 
 # ── 7b. Apply local patches ──────────────────────────────────────────
@@ -855,38 +1016,54 @@ start_unit hermes-gateway
 start_unit hermes-dashboard
 start_unit hindsight-server
 start_unit sidekick
-start_unit sidekick-audio
-
-# Give the gateway a few seconds to bind before we probe.
-HEALTH_URL="http://127.0.0.1:8642/health"
-info "probing ${HEALTH_URL}"
-for _ in $(seq 1 15); do
-  if curl -fsS --max-time 2 "${HEALTH_URL}" >/dev/null 2>&1; then
-    ok "gateway healthy at ${HEALTH_URL}"
-    break
-  fi
-  sleep 1
-done
-SIDEKICK_URL="${SIDEKICK_LOCAL_SCHEME}://127.0.0.1:3001/"
-info "probing ${SIDEKICK_URL}"
-for _ in $(seq 1 15); do
-  if curl -kfsS --max-time 2 "${SIDEKICK_URL}" >/dev/null 2>&1; then
-    ok "sidekick healthy at ${SIDEKICK_URL}"
-    break
-  fi
-  sleep 1
-done
-if ! curl -fsS --max-time 2 "${HEALTH_URL}" >/dev/null 2>&1; then
-  warn "gateway did not respond on ${HEALTH_URL} after 15s — check: journalctl --user -u hermes-gateway -n 100"
+if [[ "${SIDEKICK_AUDIO_ENABLED:-0}" == "1" ]]; then
+  start_unit sidekick-audio
+else
+  warn "sidekick-audio not started because audio bridge install is disabled"
 fi
+
+# Give the services a few seconds to bind before we probe.
+probe_url() {
+  local label="$1" url="$2" token="${3:-}" curl_flags=(-fsS --max-time 2)
+  [[ "${url}" == https://127.0.0.1:* ]] && curl_flags=(-kfsS --max-time 2)
+  info "probing ${url}"
+  for _ in $(seq 1 15); do
+    if [[ -n "${token}" ]]; then
+      if curl "${curl_flags[@]}" -H "Authorization: Bearer ${token}" "${url}" >/dev/null 2>&1; then
+        ok "${label} healthy at ${url}"
+        return 0
+      fi
+    elif curl "${curl_flags[@]}" "${url}" >/dev/null 2>&1; then
+      ok "${label} healthy at ${url}"
+      return 0
+    fi
+    sleep 1
+  done
+  warn "${label} did not respond on ${url} after 15s"
+  return 1
+}
+
+GATEWAY_HEALTH_URL="http://127.0.0.1:8642/health"
+HINDSIGHT_HEALTH_URL="http://127.0.0.1:8765/health"
+SIDEKICK_PLUGIN_HEALTH_URL="http://127.0.0.1:8645/v1/health"
+SIDEKICK_URL="${SIDEKICK_LOCAL_SCHEME}://127.0.0.1:3001/"
+probe_url "gateway" "${GATEWAY_HEALTH_URL}" || warn "check: journalctl --user -u hermes-gateway -n 100"
+probe_url "hindsight" "${HINDSIGHT_HEALTH_URL}" || warn "check: journalctl --user -u hindsight-server -n 100"
+probe_url "sidekick plugin" "${SIDEKICK_PLUGIN_HEALTH_URL}" "${SIDEKICK_PLATFORM_TOKEN_VALUE}" || warn "check: journalctl --user -u hermes-gateway -n 100"
+probe_url "sidekick" "${SIDEKICK_URL}" || warn "check: journalctl --user -u sidekick -n 100"
 
 # ── 9. Next steps ────────────────────────────────────────────────────
 section "Next steps"
 
+if [[ -n "${TAILSCALE_DNS:-}" ]]; then
+  SIDEKICK_OPEN_URL="https://${TAILSCALE_DNS}:3001/"
+else
+  SIDEKICK_OPEN_URL="http://127.0.0.1:3001/"
+fi
+
 cat <<EOF
   ${C_BOLD}Open the sidekick PWA${C_RESET}
-    cd ${SIDEKICK_PATH} && npm install && npm run dev
-    (or open the deployed URL once you've configured one)
+    ${SIDEKICK_OPEN_URL}
 
   ${C_BOLD}Update later${C_RESET}
     cd ${REPO} && git pull && ./scripts/bootstrap.sh

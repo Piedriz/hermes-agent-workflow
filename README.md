@@ -302,6 +302,14 @@ cd hermes-agent-workflow
 inputs and invokes it with `--env-file`. Read the script first;
 it's commented.
 
+The default fresh-install path uses `OPENAI_API_KEY` for Hermes model
+access and for the local Hindsight memory server. Sidekick is served on
+local HTTP behind Tailscale Serve when Tailscale is available, giving a
+browser-trusted `https://<host>.<tailnet>.ts.net:3001/` URL without a
+self-signed certificate warning. Access control for that URL is your
+tailnet ACL; restrict `<host>:3001` there if the agent should be
+user-only on a wider tailnet.
+
 ---
 
 ## §9 — Updating
@@ -385,9 +393,10 @@ sanitized snippet of the failing logs.
   [ hindsight ]            <- memory backend (Postgres + FastAPI)
 ```
 
-- **sidekick** is the user-facing surface: PWA, Bun-served proxy at
-  `/api/hermes/*`, and an aiortc audio bridge for low-latency voice
-  in/out via Deepgram.
+- **sidekick** is the user-facing surface: PWA, Node-served proxy at
+  `/api/hermes/*`, and an optional audio bridge for low-latency voice
+  in/out via Deepgram. The Hermes integration is the Sidekick plugin
+  shipped in the sidekick repo under `backends/hermes/plugin`.
 - **hermes-agent** runs the actual agent loop, skills, and tool
   calls. It exposes the OpenAI-compatible `/v1/responses` interface
   that sidekick speaks to.
@@ -404,12 +413,12 @@ sanitized snippet of the failing logs.
   pending.
 - **Python**: 3.11 or newer.
 - **Node**: 20 or newer (sidekick proxy, claude-code).
-- **Bun** (sidekick proxy): [bun.sh](https://bun.sh).
 - **`uv`**, **`git`**, **`git-crypt`**, **`gh`**, **`ffmpeg`**,
   **`tmux`** on `$PATH`. The bootstrap script checks each and tells
   you what's missing.
-- **API keys**: Deepgram (audio), one of OpenRouter / Anthropic /
-  OpenAI (LLM), Tavily (web search, optional).
+- **API keys**: OpenAI (LLM + Hindsight memory defaults), Deepgram
+  (audio, optional), OpenRouter (optional alternate LLM provider),
+  Tavily (web search, optional).
 
 ---
 

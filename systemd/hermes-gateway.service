@@ -15,15 +15,10 @@ Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
 # Auto-approve unseen shell hooks so the service doesn't hang waiting for a
 # TTY prompt. Equivalent to --accept-hooks / hooks_auto_accept: true.
 Environment=HERMES_ACCEPT_HOOKS=1
-# OPTIONAL: plugin-owned push dispatch. When set, the sidekick plugin
-# dispatches Web Push directly from its in-process bus instead of
-# delegating up through the sidekick proxy. The sidekick proxy's own
-# SIDEKICK_PUSH_OWNED_BY_PLUGIN flag MUST match this one — if only
-# one side has it, push fires zero times (proxy delegates, plugin
-# skips). Default: unset (legacy proxy-side dispatch). Set both to
-# true if you're using the plugin-side dispatcher (sidekick.db push
-# subs + sidekick_dispatcher.py).
-# Environment=SIDEKICK_PUSH_OWNED_BY_PLUGIN=true
+# Sidekick is integrated through the Hermes plugin shipped in the
+# sidekick repo. Keep plugin/proxy ownership flags in sync.
+Environment=SIDEKICK_PUSH_OWNED_BY_PLUGIN=true
+Environment=SIDEKICK_INFLIGHT_OWNED_BY_PLUGIN=true
 
 [Install]
 WantedBy=default.target
