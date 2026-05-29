@@ -24,7 +24,7 @@ existing git-crypt key:
 
 ```bash
 ./scripts/promote-private-fork.sh \
-  --repo YOUR_GITHUB_USER/mombot-agent-private \
+  --repo YOUR_GITHUB_USER/second-agent-private \
   --create-github \
   --reuse-key-from ~/code/hermes-agent-private \
   --rerun-bootstrap \

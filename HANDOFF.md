@@ -72,33 +72,33 @@ Self-signed fallback is only for explicit non-Tailscale installs via
 ## Access Control
 
 Tailscale Serve is **tailnet-only**, not **user-only**. If your tailnet
-policy lets a machine reach `fontbrain:3001`, that machine can load the
+policy lets a machine reach `<agent-host>:3001`, that machine can load the
 Sidekick app and call its API. Do not assume that a user-owned node is
 private merely because it is not tagged as a robot or workstation.
 
-For a Jon-only agent, add a tailnet ACL/grant that allows only Jon-owned
+For a personal-only agent, add a tailnet ACL/grant that allows only owner-owned
 devices to reach the active host's Sidekick port and removes broader
 `*:*` / tag-wide access for that destination. Example shape:
 
 ```json
 {
   "hosts": {
-    "fontbrain": "100.100.171.72"
+    "agent-host": "100.64.0.10"
   },
   "acls": [
     {
       "action": "accept",
-      "src": ["jscholz@reimaginerobotics.ai"],
-      "dst": ["fontbrain:3001"]
+      "src": ["owner@example.com"],
+      "dst": ["agent-host:3001"]
     }
   ]
 }
 ```
 
-Validate from a non-Jon machine after changing policy:
+Validate from a machine that should not have access after changing policy:
 
 ```bash
-curl -I https://fontbrain.<tailnet>.ts.net:3001/
+curl -I https://agent-host.<tailnet>.ts.net:3001/
 ```
 
 It should fail from machines that are not meant to use the agent.

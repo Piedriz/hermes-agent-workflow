@@ -183,7 +183,7 @@ unlocked private repo's git-crypt key:
 
 ```bash
 ./scripts/promote-private-fork.sh \
-  --repo <user>/mombot-agent-private \
+  --repo <user>/<second-agent-private-repo> \
   --create-github \
   --reuse-key-from ~/code/hermes-agent-private \
   --rerun-bootstrap \

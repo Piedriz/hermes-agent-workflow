@@ -51,8 +51,8 @@ What does NOT go here:
 
 ## Post-mortem (2026-05-11)
 
-This dir exists because of a field bug: on the first host migration
-of the original install (blueberry → cortex), `~/.hermes/scripts/`
+This dir exists because of a field bug: on an early host migration
+of the original install (`old-host` → `new-host`), `~/.hermes/scripts/`
 wasn't in the symlink list. The notion daily-planner script lived
 there as a real file. When the new host came up, the dir was empty,
 the cron ran a missing path silently for two days, and the user only
