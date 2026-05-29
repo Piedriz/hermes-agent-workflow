@@ -131,6 +131,14 @@ if [[ -f "${OUT_DIR}/dump.sql.gz" ]]; then
   rm -f "${OUT_DIR}/dump.sql.gz"
 fi
 
+# Empty SQL files and git-crypt do not make good long-lived blobs: the
+# encrypted object has a header, but checkout smudges it back to a 0-byte
+# working-tree file, which can leave the repo looking dirty forever.
+# Treat absent table files as "empty table" and only version dumps that
+# contain rows.
+find "${OUT_DIR}" -type f -name '*.sql' -size 0 -delete
+find "${OUT_DIR}" -type d -empty -delete
+
 # --- Commit + push only if anything changed ------------------------------
 cd "${REPO}"
 git add hindsight-data/
