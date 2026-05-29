@@ -75,9 +75,11 @@ tmp_new="$(mktemp)"
 trap 'rm -f "$tmp_old" "$tmp_new"' EXIT
 
 crontab -l 2>/dev/null > "$tmp_old" || true
-awk -v begin="$begin" -v end="$end" '
+awk -v begin="$begin" -v end="$end" -v repo="$REPO" '
   $0 == begin { skip=1; next }
   $0 == end { skip=0; next }
+  skip != 1 && $0 !~ /^[[:space:]]*#/ && index($0, repo "/scripts/") > 0 &&
+    $0 ~ /(doctor|sync-hermes|sync-cc-history|sync-hermes-state|sync-hindsight-bank|sync-sidekick-db|prune-claude-cc-history)[.]sh/ { next }
   skip != 1 { print }
 ' "$tmp_old" > "$tmp_new"
 
