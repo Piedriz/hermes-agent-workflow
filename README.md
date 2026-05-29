@@ -450,6 +450,12 @@ sanitized snippet of the failing logs.
 - **API keys**: OpenAI (LLM + Hindsight memory defaults), Deepgram
   (audio, optional), OpenRouter (optional alternate LLM provider),
   Tavily (web search, optional).
+- **Audio bridge**: installed by default when the Sidekick checkout
+  includes `audio-bridge/`. On ARM/Pi hosts, bootstrap skips the
+  optional `silero-vad` Torch dependency by default so Deepgram STT/TTS
+  works without pulling multi-GB ML packages. Set
+  `INSTALL_SIDEKICK_AUDIO_BARGE_VAD=1` only when you explicitly want
+  bridge-side barge VAD on that host.
 
 ---
 

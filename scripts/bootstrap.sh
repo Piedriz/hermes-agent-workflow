@@ -64,7 +64,10 @@ Recognized variables (set via env or env-file):
   OPENROUTER_API_KEY     optional alternate LLM provider key
   TAVILY_API_KEY         optional (enables web_search tool); skip with empty value
   INSTALL_SIDEKICK_AUDIO_BRIDGE
-                         auto by default; skips Pi/ARM unless set to 1
+                         auto by default; installs when sidekick/audio-bridge exists
+  INSTALL_SIDEKICK_AUDIO_BARGE_VAD
+                         auto by default; skips heavy Silero/Torch deps on ARM
+                         unless set to 1
 EOF
       exit 0 ;;
     *) echo "unknown arg: $1" >&2; exit 2 ;;
@@ -643,25 +646,40 @@ fi
 # Audio bridge: lives inside sidekick repo; uv venv created in-place.
 AUDIO_BRIDGE_DIR="${SIDEKICK_PATH}/audio-bridge"
 INSTALL_SIDEKICK_AUDIO_BRIDGE="${INSTALL_SIDEKICK_AUDIO_BRIDGE:-auto}"
+INSTALL_SIDEKICK_AUDIO_BARGE_VAD="${INSTALL_SIDEKICK_AUDIO_BARGE_VAD:-auto}"
 SIDEKICK_AUDIO_ENABLED=0
 case "${INSTALL_SIDEKICK_AUDIO_BRIDGE}" in
   1|true|TRUE|yes|YES) SIDEKICK_AUDIO_ENABLED=1 ;;
   0|false|FALSE|no|NO) SIDEKICK_AUDIO_ENABLED=0 ;;
-  auto)
-    case "$(uname -m)" in
-      arm64|aarch64|armv*) SIDEKICK_AUDIO_ENABLED=0 ;;
-      *) SIDEKICK_AUDIO_ENABLED=1 ;;
-    esac
-    ;;
+  auto) SIDEKICK_AUDIO_ENABLED=1 ;;
   *) warn "unknown INSTALL_SIDEKICK_AUDIO_BRIDGE=${INSTALL_SIDEKICK_AUDIO_BRIDGE}; defaulting to disabled" ;;
 esac
 if [[ -d "${AUDIO_BRIDGE_DIR}" && "${SIDEKICK_AUDIO_ENABLED}" == "1" ]]; then
-  if [[ -x "${AUDIO_BRIDGE_DIR}/.venv/bin/python" ]]; then
-    ok "audio-bridge venv exists"
-  else
-    info "creating audio-bridge venv"
-    (cd "${AUDIO_BRIDGE_DIR}" && uv venv && uv pip install -r requirements.txt)
+  SIDEKICK_AUDIO_BARGE_VAD_ENABLED=0
+  case "${INSTALL_SIDEKICK_AUDIO_BARGE_VAD}" in
+    1|true|TRUE|yes|YES) SIDEKICK_AUDIO_BARGE_VAD_ENABLED=1 ;;
+    0|false|FALSE|no|NO) SIDEKICK_AUDIO_BARGE_VAD_ENABLED=0 ;;
+    auto)
+      case "$(uname -m)" in
+        arm64|aarch64|armv*) SIDEKICK_AUDIO_BARGE_VAD_ENABLED=0 ;;
+        *) SIDEKICK_AUDIO_BARGE_VAD_ENABLED=1 ;;
+      esac
+      ;;
+    *) warn "unknown INSTALL_SIDEKICK_AUDIO_BARGE_VAD=${INSTALL_SIDEKICK_AUDIO_BARGE_VAD}; defaulting to disabled" ;;
+  esac
+
+  audio_requirements="${AUDIO_BRIDGE_DIR}/requirements.txt"
+  audio_requirements_tmp=""
+  if [[ "${SIDEKICK_AUDIO_BARGE_VAD_ENABLED}" != "1" ]]; then
+    audio_requirements_tmp="$(mktemp)"
+    grep -v -E '^silero-vad([<>= ].*)?$' "${audio_requirements}" > "${audio_requirements_tmp}"
+    audio_requirements="${audio_requirements_tmp}"
+    warn "installing sidekick audio bridge without silero-vad; bridge STT/TTS works, bridge-side barge VAD is disabled"
   fi
+
+  info "installing audio-bridge dependencies"
+  (cd "${AUDIO_BRIDGE_DIR}" && uv venv && uv pip install -r "${audio_requirements}")
+  [[ -n "${audio_requirements_tmp}" ]] && rm -f "${audio_requirements_tmp}"
 elif [[ -d "${AUDIO_BRIDGE_DIR}" ]]; then
   warn "skipping sidekick audio bridge on this host. Set INSTALL_SIDEKICK_AUDIO_BRIDGE=1 to install it explicitly."
 else

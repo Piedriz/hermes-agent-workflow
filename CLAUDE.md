@@ -299,6 +299,7 @@ install time:
 **Optional**:
 - `TAVILY_API_KEY` — "Web search. Skip if you don't want web tools yet."
 - `ANTHROPIC_API_KEY` — "Direct Claude API. OpenRouter covers it too — only set this if you have a reason."
+- `INSTALL_SIDEKICK_AUDIO_BARGE_VAD` — leave unset for the normal path. On Pi/ARM installs this keeps Deepgram STT/TTS enabled while skipping the optional Silero/Torch barge-VAD dependency; set to `1` only if the user explicitly wants bridge-side barge detection on that host.
 
 **Critical decisions** (surface explicitly):
 - "Do you want WhatsApp integration? If yes, I'll set up the Baileys QR-pairing at install time — you scan a QR on your phone." Default: ask. If no, set `WHATSAPP_ENABLED=false`.
