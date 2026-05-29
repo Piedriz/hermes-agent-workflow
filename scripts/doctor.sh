@@ -93,6 +93,9 @@ check_service() {
   if ! systemctl --user is-active "${name}" >/dev/null 2>&1; then
     ISSUES+=("service not active: ${name}")
   fi
+  if ! systemctl --user is-enabled "${name}" >/dev/null 2>&1; then
+    ISSUES+=("service not enabled for user boot: ${name}")
+  fi
 }
 check_service hermes-gateway
 check_service hermes-dashboard

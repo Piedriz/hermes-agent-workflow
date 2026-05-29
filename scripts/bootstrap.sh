@@ -1010,6 +1010,8 @@ start_unit() {
     warn "${unit}.service not installed — skipping start"
     return
   fi
+  systemctl --user enable "${unit}.service" >/dev/null \
+    || warn "${unit} failed to enable (check: systemctl --user status ${unit})"
   systemctl --user start "${unit}.service" || warn "${unit} failed to start (check: journalctl --user -u ${unit} -n 50)"
 }
 start_unit hermes-gateway

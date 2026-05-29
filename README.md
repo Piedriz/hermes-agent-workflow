@@ -308,7 +308,9 @@ local HTTP behind Tailscale Serve when Tailscale is available, giving a
 browser-trusted `https://<host>.<tailnet>.ts.net:3001/` URL without a
 self-signed certificate warning. Access control for that URL is your
 tailnet ACL; restrict `<host>:3001` there if the agent should be
-user-only on a wider tailnet.
+user-only on a wider tailnet. Bootstrap installs, enables, and starts
+the user-level systemd services so the stack comes back after reboot
+when user lingering is enabled for the account.
 
 ---
 
