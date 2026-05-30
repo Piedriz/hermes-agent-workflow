@@ -499,10 +499,10 @@ link_secret() {
   ok "linked ${live} → ${src}"
 }
 
-# Templates → live config files (plaintext, never encrypted)
+# Repo-managed live config files (plaintext, never encrypted)
 link_template "example.config.yaml"            "config.yaml"
 link_template "example.AGENTS.md"              "AGENTS.md"
-link_template "SOUL.md.template"               "SOUL.md"
+link_template "SOUL.md"               "SOUL.md"
 link_template "example.hindsight.config.json"  "hindsight/config.json"
 
 # Versioned state directories (plaintext)

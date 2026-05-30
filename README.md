@@ -47,7 +47,7 @@ listed here is **not** in your backup. The columns:
 | ------------------------------------- | ------------------------------------- | --------- | -------- | ----- |
 | `config.yaml` (from `example.config.yaml`) | `~/.hermes/config.yaml`           | no        | shared   | Hermes runtime config: model, platform_toolsets, gateway, voice. |
 | `AGENTS.md` (from `example.AGENTS.md`)| `~/.hermes/AGENTS.md`                 | no        | shared   | Tool-routing hints the running agent reads each session. Edit freely. |
-| `SOUL.md` (from `SOUL.md.template`)   | `~/.hermes/SOUL.md`                   | no        | shared   | Your agent's persona / system-prompt prefix. |
+| `SOUL.md`   | `~/.hermes/SOUL.md`                   | no        | shared   | Your agent's persona / system-prompt prefix. |
 | `hindsight/config.json` (from `example.hindsight.config.json`) | `~/.hermes/hindsight/config.json` | no | shared | Local hindsight client config. |
 | `memories/`                           | `~/.hermes/memories/`                 | **yes**   | shared   | Append-only memory store the agent grows. Encrypted in private forks; public repo keeps only placeholders plaintext. |
 | `skills/`                             | `~/.hermes/skills/`                   | no        | shared   | Skills tree. Vendored upstream snapshot + your edits + agent-authored skills. See §4. |

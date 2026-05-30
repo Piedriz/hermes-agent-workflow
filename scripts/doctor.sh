@@ -65,7 +65,7 @@ check_symlink() {
 
 check_symlink "${HERMES}/config.yaml"             "${REPO}/example.config.yaml"            "hermes config"
 check_symlink "${HERMES}/AGENTS.md"               "${REPO}/example.AGENTS.md"              "AGENTS.md"
-check_symlink "${HERMES}/SOUL.md"                 "${REPO}/SOUL.md.template"               "SOUL.md"
+check_symlink "${HERMES}/SOUL.md"                 "${REPO}/SOUL.md"                        "SOUL.md"
 check_symlink "${HERMES}/hindsight/config.json"   "${REPO}/example.hindsight.config.json"  "hindsight config"
 # channel_directory.json was previously symlinked here, but the gateway
 # atomic-writes it every 5 min via os.replace, which nukes the symlink
