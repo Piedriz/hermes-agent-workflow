@@ -6,34 +6,37 @@ The single-file pg_dump model breaks once any table exceeds GitHub's
 fixed-PK-range chunks that:
 
   1. Stay under the cap (target: 80 MB per chunk, 20 MB safety margin).
-  2. Preserve git's pack-delta compression — past chunks are
+  2. Preserve git's pack-delta compression — past chunks are usually
      byte-identical across daily runs unless rows in their range
      actually changed. Only the "current" chunk grows day-to-day.
-  3. Rotate gracefully: when the current chunk exceeds the target,
-     freeze its highest PK as the new boundary and start a new chunk
-     on the next dump. No reshuffling of historical chunks.
+  3. Rotate gracefully: when any chunk exceeds the target, repair the
+     rotation by deriving fresh PK boundaries from the current dump.
+     This deliberately trades one larger diff for never committing a
+     blob that GitHub will reject.
 
 Layout for table `T` in directory `out_dir/T/`:
 
     .rotation.json     # {"chunks": [{"num": 1, "max_pk": "<uuid>"}, ...]}
-    0001.sql           # INSERT statements for PKs ≤ max_pk_1
-    0002.sql           # INSERT statements for PKs ∈ (max_pk_1, max_pk_2]
+    0001.sql           # COPY block for rows with PKs ≤ max_pk_1
+    0002.sql           # COPY block for rows with PKs ∈ (max_pk_1, max_pk_2]
     ...
     NNNN.sql           # CURRENT chunk — PKs > last frozen max_pk
 
 On dump:
   - Read .rotation.json (or initialize empty for first run).
   - For each frozen chunk (1..N-1):
-      Query rows in that chunk's PK range. Emit INSERTs to <NNNN>.sql.
+      Query rows in that chunk's PK range. Emit COPY data to <NNNN>.sql.
       Past chunk file becomes byte-identical UNLESS a row's content
       changed upstream — in which case git picks up the small diff.
   - For the current chunk N:
-      Query rows with PK > last_frozen_max_pk. Emit to <NNNN>.sql.
-  - If <NNNN>.sql > target_bytes, ROTATE:
-      Record (N, max_pk_of_chunk_N) in .rotation.json.
-      Next run starts a fresh current chunk (N+1) for new rows.
+      Query rows with PK > last_frozen_max_pk. Emit COPY data to <NNNN>.sql.
+  - If any chunk exceeds target_bytes, recompute all boundaries from
+    the current sorted rows, then write that repaired layout.
+  - If any emitted chunk still exceeds max_bytes, fail before commit.
 
-On restore: `cat T/*.sql | psql` — file numbers sort chronologically.
+On restore: `cat T/*.sql | psql` — each file is a complete COPY block
+so arbitrary text payload stays inside COPY data mode instead of being
+parsed as psql metacommands.
 
 Idempotent + deterministic: row order within a chunk is
 `ORDER BY <pk>` so two runs against an unchanged DB produce
@@ -62,12 +65,12 @@ import os
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 
 def _psql_cmd(args: argparse.Namespace, sql: str) -> list[str]:
     return [
-        "psql",
+        _psql_path(args),
         "--host", args.psql_host,
         "--port", str(args.psql_port),
         "--username", args.psql_user,
@@ -80,6 +83,13 @@ def _psql_cmd(args: argparse.Namespace, sql: str) -> list[str]:
         "--record-separator-zero",
         "-c", sql,
     ]
+
+
+def _psql_path(args: argparse.Namespace) -> str:
+    pg_dump_path = Path(args.pg_dump_path)
+    if pg_dump_path.is_absolute():
+        return str(pg_dump_path.with_name("psql"))
+    return "psql"
 
 
 def _psql_query(args: argparse.Namespace, sql: str) -> bytes:
@@ -95,118 +105,82 @@ def _psql_query(args: argparse.Namespace, sql: str) -> bytes:
     return result.stdout
 
 
-def _pg_dump_rows_in_range(
-    args: argparse.Namespace,
-    lo_exclusive: str | None,
-    hi_inclusive: str | None,
-) -> bytes:
-    """Dump INSERTs for rows in (lo_exclusive, hi_inclusive].
+def _quote_ident(name: str) -> str:
+    return '"' + name.replace('"', '""') + '"'
 
-    None on either side = no bound on that side. We use pg_dump with
-    --column-inserts for the row format and then post-filter, BUT
-    that re-dumps the whole table even for a slice. Instead, use a
-    direct SELECT … FROM … WHERE … and synthesize INSERTs.
 
-    Simpler: dump the whole table with pg_dump once, then bucket the
-    INSERT lines into chunks here. That's what we do — the sort happens
-    once for the whole table, then we split. See `dump_full_table`.
+def _qualified_table_expr(table_pg: str) -> str:
+    return ".".join(_quote_ident(part) for part in table_pg.split("."))
+
+
+def _table_regclass_literal(table_pg: str) -> str:
+    return "'" + table_pg.replace("'", "''") + "'::regclass"
+
+
+def _columns_list(args: argparse.Namespace) -> list[str]:
+    sql = (
+        "SELECT attname FROM pg_attribute "
+        f"WHERE attrelid = {_table_regclass_literal(args.table)} "
+        "AND attnum > 0 AND NOT attisdropped "
+        "AND attgenerated = '' "
+        "ORDER BY attnum"
+    )
+    raw = _psql_query(args, sql)
+    cols = [line.decode() for line in raw.split(b"\0") if line]
+    # --exclude-columns strips derived/bulky columns (e.g. pgvector
+    # `embedding`) from the dump. They're reconstituted on restore, so
+    # backups carry only the source-of-truth columns. The pk column is
+    # never excludable — chunking + restore both key off it.
+    exclude = set(getattr(args, "exclude_columns", None) or [])
+    if exclude:
+        if args.pk_column in exclude:
+            raise ValueError(
+                f"--exclude-columns may not contain the pk column "
+                f"{args.pk_column!r}"
+            )
+        cols = [c for c in cols if c not in exclude]
+    return cols
+
+
+def _copy_header(args: argparse.Namespace, columns: list[str]) -> bytes:
+    cols = ", ".join(_quote_ident(c) for c in columns)
+    return f"COPY {_qualified_table_expr(args.table)} ({cols}) FROM stdin;\n".encode()
+
+
+def _copy_footer() -> bytes:
+    return b"\\.\n"
+
+
+def _dump_full_table(args: argparse.Namespace, columns: list[str]) -> list[bytes]:
+    """Dump table rows as COPY text data, ordered by the chunking key.
+
+    COPY text escapes tabs, newlines, and backslashes in field data, so
+    rows can be replayed through psql without psql seeing payload text
+    like `\"` as a client metacommand.
     """
-    raise NotImplementedError  # we bucket from the full dump instead
-
-
-def _dump_full_table(args: argparse.Namespace) -> list[bytes]:
-    """Run pg_dump for the whole table, return a list of INSERT lines
-    sorted by PK (lexicographic — same as bash `LC_ALL=C sort`).
-
-    Header / SET / SELECT setup lines are filtered out. The chunks are
-    pure INSERT statements + a trailing newline. On restore we
-    concatenate chunk files; psql handles each line independently.
-    """
-    table_pg = args.table  # e.g. "public.memory_units"
+    table_expr = _qualified_table_expr(args.table)
+    select_cols = ", ".join(_quote_ident(c) for c in columns)
+    order_expr = _quote_ident(args.pk_column)
+    sql = f"COPY (SELECT {select_cols} FROM {table_expr} ORDER BY {order_expr}) TO STDOUT"
     cmd = [
-        args.pg_dump_path,
+        _psql_path(args),
         "--host", args.psql_host,
         "--port", str(args.psql_port),
         "--username", args.psql_user,
         "--dbname", args.psql_database,
-        "--data-only",
-        "--column-inserts",
-        "--table", table_pg,
+        "--no-psqlrc",
+        "--quiet",
+        "-c", sql,
     ]
     result = subprocess.run(cmd, check=True, capture_output=True)
-    lines = result.stdout.splitlines()
-    inserts = [l for l in lines if l.startswith(b"INSERT INTO " + table_pg.encode())]
-    # Stable order: lex sort. Matches `LC_ALL=C sort` in the bash
-    # scripts. Two consecutive identical DBs produce identical output.
-    inserts.sort()
-    return inserts
+    return result.stdout.splitlines()
 
 
-def _pk_from_insert(line: bytes, pk_col_idx: int) -> bytes:
-    """Extract the PK value from a `--column-inserts` line.
-
-    pg_dump format (with --column-inserts):
-        INSERT INTO public.memory_units (id, content, ...) VALUES ('uuid-...', 'text-...', ...);
-
-    The columns list and the VALUES list are positional. pk_col_idx
-    is the 0-based index of the PK column in the columns list. We pull
-    the matching positional value from VALUES.
-    """
-    # Find the start of VALUES (
-    values_marker = b" VALUES ("
-    idx = line.find(values_marker)
-    if idx < 0:
-        raise ValueError(f"no VALUES in insert line: {line[:80]!r}")
-    payload = line[idx + len(values_marker):]
-    # Walk through values respecting single-quoted strings (with ''
-    # for escaped quote) until we've seen pk_col_idx commas at the
-    # top level.
-    i = 0
-    n = len(payload)
-    field_start = 0
-    field_count = 0
-    in_string = False
-    while i < n:
-        c = payload[i:i + 1]
-        if in_string:
-            if c == b"'":
-                # SQL escape: '' = literal '
-                if i + 1 < n and payload[i + 1:i + 2] == b"'":
-                    i += 2
-                    continue
-                in_string = False
-                i += 1
-                continue
-            i += 1
-            continue
-        if c == b"'":
-            in_string = True
-            i += 1
-            continue
-        if c == b",":
-            if field_count == pk_col_idx:
-                return payload[field_start:i].strip()
-            field_count += 1
-            field_start = i + 1
-            i += 1
-            continue
-        if c == b")" and field_count == pk_col_idx:
-            return payload[field_start:i].strip()
-        i += 1
-    raise ValueError(f"could not extract pk col {pk_col_idx} from: {line[:120]!r}")
-
-
-def _columns_list(line: bytes, table_pg: str) -> list[bytes]:
-    """Parse the column list from `INSERT INTO public.X (col1, col2, ...)`."""
-    prefix = b"INSERT INTO " + table_pg.encode() + b" ("
-    if not line.startswith(prefix):
-        raise ValueError(f"unexpected insert prefix: {line[:80]!r}")
-    rest = line[len(prefix):]
-    end = rest.find(b")")
-    if end < 0:
-        raise ValueError(f"no closing ) in column list: {line[:120]!r}")
-    cols_raw = rest[:end]
-    return [c.strip() for c in cols_raw.split(b",")]
+def _pk_from_copy_row(line: bytes, pk_col_idx: int) -> bytes:
+    fields = line.split(b"\t")
+    if pk_col_idx >= len(fields):
+        raise ValueError(f"could not extract pk col {pk_col_idx} from: {line[:120]!r}")
+    return fields[pk_col_idx]
 
 
 def _load_rotation(out_dir: Path) -> dict[str, Any]:
@@ -221,20 +195,31 @@ def _save_rotation(out_dir: Path, rotation: dict[str, Any]) -> None:
     rot_path.write_text(json.dumps(rotation, indent=2, sort_keys=True) + "\n")
 
 
-def _write_chunk_atomic(path: Path, body_lines: list[bytes]) -> int:
+def _write_chunk_atomic(
+    path: Path,
+    body_lines: list[bytes],
+    header: bytes,
+    footer: bytes,
+) -> int:
     """Write a chunk file atomically. Returns bytes written."""
     tmp = path.with_suffix(path.suffix + ".tmp")
     with open(tmp, "wb") as f:
+        f.write(header)
         for line in body_lines:
             f.write(line)
             f.write(b"\n")
+        f.write(footer)
     size = tmp.stat().st_size
     tmp.replace(path)
     return size
 
 
+def _chunk_body_size(body_lines: list[bytes], header: bytes, footer: bytes) -> int:
+    return len(header) + sum(len(line) + 1 for line in body_lines) + len(footer)
+
+
 def _bucket_into_chunks(
-    inserts: list[bytes],
+    rows: list[bytes],
     pk_col_idx: int,
     rotation: dict[str, Any],
 ) -> dict[int, list[bytes]]:
@@ -247,13 +232,8 @@ def _bucket_into_chunks(
     frozen_max_pks = [c["max_pk"].encode() for c in chunks]
     next_chunk_after_frozen = len(chunks) + 1
 
-    for line in inserts:
-        pk_val = _pk_from_insert(line, pk_col_idx)
-        # Strip surrounding single quotes if present (UUIDs are
-        # quoted; numeric ids aren't).
-        pk_unquoted = (
-            pk_val[1:-1] if pk_val.startswith(b"'") and pk_val.endswith(b"'") else pk_val
-        )
+    for line in rows:
+        pk_unquoted = _pk_from_copy_row(line, pk_col_idx)
         chunk_num = next_chunk_after_frozen
         for i, max_pk in enumerate(frozen_max_pks):
             if pk_unquoted <= max_pk:
@@ -264,9 +244,11 @@ def _bucket_into_chunks(
 
 
 def _initial_chunking(
-    inserts: list[bytes],
+    rows: list[bytes],
     pk_col_idx: int,
     target_bytes: int,
+    header: bytes,
+    footer: bytes,
 ) -> dict[str, Any]:
     """First-run helper: walk inserts in PK order, accumulating bytes,
     cut a chunk boundary every time we cross target_bytes. Returns
@@ -274,28 +256,44 @@ def _initial_chunking(
     bucket is the "current" chunk and is NOT recorded as frozen).
     """
     rotation: dict[str, Any] = {"chunks": []}
-    current_bytes = 0
+    current_bytes = len(header) + len(footer)
     last_pk: bytes | None = None
-    for line in inserts:
+    for line in rows:
         line_bytes = len(line) + 1  # +1 for the trailing \n we'll write
-        if current_bytes + line_bytes > target_bytes and current_bytes > 0:
+        if current_bytes + line_bytes > target_bytes and last_pk is not None:
             # Close this chunk at the previous PK.
-            if last_pk is None:
-                # Shouldn't happen — current_bytes > 0 implies we
-                # wrote at least one row.
-                raise RuntimeError("rotation logic error")
             pk_str = last_pk.decode() if isinstance(last_pk, bytes) else last_pk
-            # Strip quotes for storage consistency.
-            if pk_str.startswith("'") and pk_str.endswith("'"):
-                pk_str = pk_str[1:-1]
             rotation["chunks"].append(
                 {"num": len(rotation["chunks"]) + 1, "max_pk": pk_str}
             )
-            current_bytes = 0
+            current_bytes = len(header) + len(footer)
         current_bytes += line_bytes
-        last_pk = _pk_from_insert(line, pk_col_idx)
+        last_pk = _pk_from_copy_row(line, pk_col_idx)
     # The trailing partial bucket stays open (current chunk).
     return rotation
+
+
+def _has_oversized_bucket(
+    buckets: dict[int, list[bytes]],
+    target_bytes: int,
+    header: bytes,
+    footer: bytes,
+) -> tuple[int, int] | None:
+    for num, lines in sorted(buckets.items()):
+        size = _chunk_body_size(lines, header, footer)
+        if size > target_bytes:
+            return num, size
+    return None
+
+
+def _remove_stale_chunks(out_dir: Path, live_nums: set[int]) -> None:
+    for path in out_dir.glob("*.sql"):
+        try:
+            num = int(path.stem)
+        except ValueError:
+            continue
+        if num not in live_nums:
+            path.unlink()
 
 
 def main() -> int:
@@ -306,6 +304,13 @@ def main() -> int:
     ap.add_argument("--psql-database", required=True)
     ap.add_argument("--table", required=True, help="e.g. public.memory_units")
     ap.add_argument("--pk-column", required=True, help="primary-key column name")
+    ap.add_argument(
+        "--exclude-columns",
+        default="",
+        help="comma-separated columns to omit from the dump (e.g. "
+        "'embedding'). Reconstituted on restore. May not include the "
+        "pk column.",
+    )
     ap.add_argument("--out-dir", required=True, type=Path)
     ap.add_argument(
         "--target-bytes",
@@ -314,86 +319,104 @@ def main() -> int:
         help="rotate when current chunk exceeds this (default: 80 MiB)",
     )
     ap.add_argument(
+        "--max-bytes",
+        type=int,
+        default=95 * 1024 * 1024,
+        help="hard safety cap for emitted chunks (default: 95 MiB)",
+    )
+    ap.add_argument(
         "--pg-dump-path",
         default="pg_dump",
         help="path to pg_dump (default: PATH lookup). Set to e.g. "
         "/home/x/.pg0/installation/18.1.0/bin/pg_dump for pg0 embedded.",
     )
     args = ap.parse_args()
+    args.exclude_columns = [
+        c.strip() for c in args.exclude_columns.split(",") if c.strip()
+    ]
 
     out_dir: Path = args.out_dir
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    # 1. Dump the table to a flat sorted INSERTs list.
-    inserts = _dump_full_table(args)
-    if not inserts:
-        # Empty table — write a placeholder file so restore concat
-        # doesn't fail, clear rotation.
-        (out_dir / "0001.sql").write_bytes(b"")
-        _save_rotation(out_dir, {"chunks": []})
-        print(f"[chunked-dump] {args.table}: empty table; wrote 0001.sql empty")
-        return 0
-
-    # 2. Resolve PK column index from the first INSERT's column list.
-    cols = _columns_list(inserts[0], args.table)
+    # 1. Dump the table to a flat sorted COPY-data row list.
+    cols = _columns_list(args)
     try:
-        pk_col_idx = cols.index(args.pk_column.encode())
+        pk_col_idx = cols.index(args.pk_column)
     except ValueError:
         print(
             f"[chunked-dump] ERROR: pk column {args.pk_column!r} not in {cols}",
             file=sys.stderr,
         )
         return 2
+    header = _copy_header(args, cols)
+    footer = _copy_footer()
+
+    rows = _dump_full_table(args, cols)
+    if not rows:
+        # Empty table — write a placeholder file so restore concat
+        # doesn't fail, clear rotation.
+        (out_dir / "0001.sql").write_bytes(header + footer)
+        _save_rotation(out_dir, {"chunks": []})
+        print(f"[chunked-dump] {args.table}: empty table; wrote 0001.sql empty")
+        return 0
+
+    if args.target_bytes >= args.max_bytes:
+        print(
+            f"[chunked-dump] ERROR: target-bytes ({args.target_bytes}) must be "
+            f"less than max-bytes ({args.max_bytes})",
+            file=sys.stderr,
+        )
+        return 2
+
+    biggest_line = max(len(line) + 1 + len(header) + len(footer) for line in rows)
+    if biggest_line > args.max_bytes:
+        print(
+            f"[chunked-dump] ERROR: one row is {biggest_line} bytes, above "
+            f"max-bytes {args.max_bytes}; cannot create a pushable chunk",
+            file=sys.stderr,
+        )
+        return 3
 
     # 3. Load (or initialize) rotation.
     rotation = _load_rotation(out_dir)
     if not rotation["chunks"]:
         # First run: derive initial chunk boundaries from current data.
-        rotation = _initial_chunking(inserts, pk_col_idx, args.target_bytes)
+        rotation = _initial_chunking(rows, pk_col_idx, args.target_bytes, header, footer)
 
     # 4. Bucket lines into chunks per the rotation.
-    buckets = _bucket_into_chunks(inserts, pk_col_idx, rotation)
+    buckets = _bucket_into_chunks(rows, pk_col_idx, rotation)
+    oversized = _has_oversized_bucket(buckets, args.target_bytes, header, footer)
+    if oversized:
+        num, size = oversized
+        print(
+            f"[chunked-dump] {args.table}: chunk {num:04d} is {size} bytes, "
+            f"above {args.target_bytes} target; repairing rotation."
+        )
+        rotation = _initial_chunking(rows, pk_col_idx, args.target_bytes, header, footer)
+        buckets = _bucket_into_chunks(rows, pk_col_idx, rotation)
 
     # 5. Write every chunk that has content. Also blank out any
     # leftover files for chunk numbers not in `buckets` (defensive:
-    # a table-wide delete could empty an entire chunk).
-    next_chunk_num = len(rotation["chunks"]) + 1
+    # a table-wide delete could empty an entire chunk, or a repair
+    # pass could produce fewer chunks than the old layout).
     chunks_to_write = sorted(buckets.keys())
     for num in chunks_to_write:
         path = out_dir / f"{num:04d}.sql"
-        _write_chunk_atomic(path, buckets[num])
-
-    # 6. Rotation check: if the CURRENT chunk overflowed, freeze it.
-    current_path = out_dir / f"{next_chunk_num:04d}.sql"
-    if current_path.exists():
-        size = current_path.stat().st_size
-        if size > args.target_bytes:
-            current_lines = buckets.get(next_chunk_num, [])
-            if not current_lines:
-                # Shouldn't happen but be defensive.
-                print(
-                    f"[chunked-dump] WARN: current chunk over target but no lines?",
-                    file=sys.stderr,
-                )
-            else:
-                last_pk = _pk_from_insert(current_lines[-1], pk_col_idx)
-                pk_str = last_pk.decode()
-                if pk_str.startswith("'") and pk_str.endswith("'"):
-                    pk_str = pk_str[1:-1]
-                rotation["chunks"].append(
-                    {"num": next_chunk_num, "max_pk": pk_str}
-                )
-                print(
-                    f"[chunked-dump] {args.table}: rotated chunk {next_chunk_num} "
-                    f"({size} bytes > {args.target_bytes} target). "
-                    f"Next dump will write chunk {next_chunk_num + 1}."
-                )
+        size = _write_chunk_atomic(path, buckets[num], header, footer)
+        if size > args.max_bytes:
+            print(
+                f"[chunked-dump] ERROR: {path} is {size} bytes, above "
+                f"max-bytes {args.max_bytes}",
+                file=sys.stderr,
+            )
+            return 3
+    _remove_stale_chunks(out_dir, set(chunks_to_write))
 
     # 7. Persist rotation state.
     _save_rotation(out_dir, rotation)
 
     # 8. Summary print for cron log.
-    total_rows = len(inserts)
+    total_rows = len(rows)
     sizes = []
     for num in chunks_to_write:
         path = out_dir / f"{num:04d}.sql"

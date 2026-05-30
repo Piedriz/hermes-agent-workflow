@@ -65,7 +65,7 @@ listed here is **not** in your backup. The columns:
 | `pairing/**`                          | `~/.hermes/pairing/`                  | **yes**   | shared   | Sidekick PWA pairing tokens. |
 | `sessions/**`                         | (export target from Hermes CLI)       | **yes**   | shared   | Exported Hermes session transcripts from `scripts/sync-hermes.sh`. |
 | `hindsight-data/<table>.sql` + `hindsight-data/<bulk-table>/NNNN.sql` | (restore target: hindsight Postgres)  | **yes**   | shared   | Daily per-table `pg_dump` of the hindsight memory bank. Bulk tables (memory_units, memory_links) are byte-rotated into NNNN.sql chunks ≤ 80 MB each so the dump fits under GitHub's 100 MB per-blob cap; small tables stay single files. See §5. |
-| `hermes-data/state.sql`               | (restore target: `~/.hermes/state.db`) | **yes**  | shared   | Daily sqlite dump of `state.db` (sessions, messages, schema_version, state_meta). See §5. |
+| `hermes-data/schema.sql` + `hermes-data/<table>.sql` + `hermes-data/messages/NNNN.sql` | (restore target: `~/.hermes/state.db`) | **yes**  | shared   | Daily sqlite dump of `state.db` (sessions, messages, schema_version, state_meta). `messages` is byte-rotated into NNNN.sql chunks (see scripts/lib/chunked-sqlite-dump.py); small tables stay single files. See §5. |
 | `sidekick-data/sidekick.sql`          | (restore target: `~/.hermes/sidekick.db`) | **yes** | shared | Daily sqlite dump of Sidekick supplemental UI state: custom titles, pins, push subscriptions/preferences, unread/activity state, VAPID keys, and UI-facing message rows. See §5. |
 | `hosts/<host>/claude-code-memory/`    | `~/.claude/projects/<proj>/memory/`   | **yes**   | per-host | Per-host Claude Code memory dir, including `RESUME.md`. |
 | `hosts/<host>/claude-code-history/`   | (snapshotted from `~/.claude/projects/<proj>/*.jsonl`) | **yes** | per-host | Compressed Claude Code session transcripts. Pruned on a cron. |
@@ -180,7 +180,7 @@ OAuth tokens, WhatsApp session). The model:
 | Asset                    | How it's captured           | Where it lands           | Cron                              | Restore script |
 | ------------------------ | --------------------------- | ------------------------ | --------------------------------- | -------------- |
 | Hindsight Postgres DB    | per-table `pg_dump` + byte-rotated chunks for the bulk tables (see scripts/lib/chunked-table-dump.py) | `hindsight-data/<table>.sql` + `hindsight-data/<bulk>/NNNN.sql` (encrypted) | `cron/sync-hindsight-bank.cron.example` | `scripts/restore-hindsight-bank.sh` |
-| `~/.hermes/state.db`     | `.backup` (atomic) → `.dump sessions messages schema_version state_meta` | `hermes-data/state.sql` (encrypted) | `cron/sync-hermes-state.cron.example` | `scripts/restore-hermes-state.sh` |
+| `~/.hermes/state.db`     | `.backup` (atomic) → schema dump + per-table data dumps, with `messages` byte-rotated into chunks (see scripts/lib/chunked-sqlite-dump.py) | `hermes-data/schema.sql` + `hermes-data/<table>.sql` + `hermes-data/messages/NNNN.sql` (encrypted) | `cron/sync-hermes-state.cron.example` | `scripts/restore-hermes-state.sh` |
 | `~/.hermes/sidekick.db`  | `.backup` (atomic) → `.dump` | `sidekick-data/sidekick.sql` (encrypted) | `cron/sync-sidekick-db.cron.example` | `scripts/restore-sidekick-db.sh` |
 | Live secrets             | symlinked into repo         | `.env`, `auth.json`, etc. (encrypted) | (instant — every git push) | git pull |
 
@@ -193,12 +193,10 @@ Daily-dump crons are **off by default**. Opt in by:
 3. Editing `cron/*.cron.example`, replacing `REPO_PATH` with your
    absolute clone path, and adding the line via `crontab -e`.
 
-The `prune-hermes-state-history.sh` script keeps the encrypted
-history small — dilated-strided sample (daily for a week, weekly
-for a month, monthly for a year, yearly forever) via
-`git-filter-repo`. Roughly ~50KB-1MB of encrypted churn per active
-day; the prune keeps total backup history under 10MB on a
-multi-year horizon.
+The chunked dump layout keeps the encrypted history small on its
+own: frozen chunks stay byte-identical across runs, so git's
+pack-delta collapses each daily snapshot to roughly the size of the
+rows that actually changed. No history rewriting is needed.
 
 **Restore on a fresh machine** is a single sequence:
 
@@ -207,7 +205,7 @@ git clone <your-fork>
 cd <your-fork>
 echo '<base64-key>' | base64 -d | git-crypt unlock -
 ./scripts/bootstrap.sh        # rebuilds the symlink tree
-./scripts/restore-hermes-state.sh --yes   # replays state.sql
+./scripts/restore-hermes-state.sh --yes   # applies schema + replays data chunks
 ./scripts/restore-sidekick-db.sh --yes    # replays sidekick.sql
 ./scripts/restore-hindsight-bank.sh       # cats per-table + chunked .sql into psql
 ```
@@ -222,7 +220,7 @@ so re-runs and Claude-driven installs can detect prior state.
 By design, several things are excluded from your fork:
 
 - **Live `~/.hermes/state.db`** — too big, written every turn,
-  derivable from `hermes-data/state.sql` plus replay. The dump
+  derivable from the `hermes-data/` dumps plus replay. The dump
   captures the conversation tables; FTS5 indexes are rebuilt by
   `restore-hermes-state.sh`.
 - **Live `~/.hermes/sidekick.db`** — written by the Sidekick/Hermes
@@ -398,7 +396,7 @@ hermes-gateway -n 100 --no-pager`. Most common: missing API key in
 ciphertext.
 
 **Restored state.db has empty FTS results** — `restore-hermes-state.sh`
-rebuilds the FTS5 indexes; if you imported state.sql by hand,
+rebuilds the FTS5 indexes; if you imported the dumps by hand,
 re-run that script with `--yes` (idempotent).
 
 For anything else: open an issue with `doctor.sh` output and a

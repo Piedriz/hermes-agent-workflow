@@ -16,8 +16,8 @@
 #
 #   hindsight-data/T/
 #     .rotation.json          # frozen-chunk PK boundaries
-#     0001.sql                # frozen INSERTs, PKs ≤ max_pk_1
-#     0002.sql                # frozen INSERTs, PKs ∈ (max_pk_1, max_pk_2]
+#     0001.sql                # frozen COPY block, PKs ≤ max_pk_1
+#     0002.sql                # frozen COPY block, PKs ∈ (max_pk_1, max_pk_2]
 #     NNNN.sql                # CURRENT chunk — PKs > last frozen
 #
 # Past chunks stay byte-identical across runs unless rows in their
@@ -30,9 +30,10 @@
 # Why per-table data-only-sorted-plaintext:
 # - --data-only: skips schema; we re-create that from hindsight-api-slim's
 #   alembic migrations on restore.
-# - --column-inserts: one INSERT per row, diffable line-by-line.
-# - sorted: lex-sorted INSERTs are deterministic across runs (pg_dump's
-#   own order is heap-page-dependent).
+# - COPY format: payload text stays inside COPY data mode on restore,
+#   so psql never interprets conversation text like \" as a metacommand.
+# - sorted bulk chunks: COPY rows are emitted in PK order for stable
+#   chunk boundaries and byte-identical historical chunks.
 # - NOT gzipped: gzip rearranges its bitstream when even a few rows
 #   change, defeating git's pack-delta compression. Plaintext sorted
 #   SQL is the right input for pack-delta + zlib; per-day cost in
@@ -45,12 +46,26 @@ set -euo pipefail
 
 # Cron runs without the user's systemd session env vars; `systemctl
 # --user is-active` fails with "Failed to connect to bus" and the
-# server-up probe trips even when the service IS running. Set
+# check below trips even when the service IS running. Set
 # XDG_RUNTIME_DIR so the user-bus probe works under cron.
 : "${XDG_RUNTIME_DIR:=/run/user/$(id -u)}"
 export XDG_RUNTIME_DIR
 
 REPO="${REPO:-$(cd "$(dirname "$0")/.." && pwd)}"
+
+# --- Multi-host guard ----------------------------------------------------
+# Only the active host writes the dump. Two hosts both writing
+# nightly = merge conflicts on push. See HANDOFF.md.
+if [[ -f "${REPO}/ACTIVE_HOST" ]]; then
+  active_host=$(grep -E '^active_host=' "${REPO}/ACTIVE_HOST" | head -1 | cut -d= -f2-)
+  if [[ "${active_host}" != "$(hostname)" ]]; then
+    mkdir -p "${HOME}/.hermes/logs"
+    echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) standby (active=${active_host:-<unset>})" \
+      > "${HOME}/.hermes/logs/sync-hindsight-bank.standby" 2>/dev/null || true
+    exit 0
+  fi
+fi
+
 PGBIN="${PGBIN:-$HOME/.pg0/installation/18.1.0/bin}"
 PGHOST="${PGHOST:-127.0.0.1}"
 PGPORT="${PGPORT:-5432}"
@@ -70,14 +85,31 @@ if ! systemctl --user is-active hindsight-server.service >/dev/null 2>&1; then
   exit 0
 fi
 
-# Each bulk-table entry is "table:pk_column". `pk_column` is the column
-# the script buckets + orders by. For tables with a single `id`, that's
-# the PK. For join tables (memory_links — composite key
-# (from_unit_id, to_unit_id, link_type)) use whichever column has the
-# widest value distribution; the chunked layout doesn't require strict
-# primary-key semantics, just a stable bucket key.
+# Tables we want to dump. Two categories:
+#
+#   bulk_tables[] — chunked layout (subdir + .rotation.json + NNNN.sql).
+#     Add a table here once its single dump exceeds ~50 MB. Specifying
+#     a non-bulk table here is harmless — it just creates a subdir
+#     with a single 0001.sql.
+#   small_tables[] — flat per-table .sql files in OUT_DIR.
+#
+# memory_units is the bulk table and is chunked. memory_links is
+# flagged as bulk now (it tends to cross the threshold next) so we
+# don't have to retro-migrate later.
+# Each bulk-table entry is "table:pk_column[:exclude_cols]". `pk_column`
+# is the column the script buckets + orders by. For tables with a single
+# `id`, that's the PK. For join tables (memory_links — composite
+# key (from_unit_id, to_unit_id, link_type)) use whichever column
+# has the widest value distribution; the chunked layout doesn't
+# require strict primary-key semantics, just a stable bucket key.
+#
+# `exclude_cols` (optional, comma-separated) omits derived/bulky
+# columns from the dump; they're reconstituted on restore. memory_units
+# drops its pgvector `embedding` (1536-dim, ~96% of the dump bytes) —
+# scripts/reembed-hindsight.py regenerates it during restore from the
+# source `text`. Backups then carry only source-of-truth columns.
 declare -a bulk_tables=(
-  "memory_units:id"
+  "memory_units:id:embedding"
   "memory_links:from_unit_id"
 )
 declare -a small_tables=(
@@ -93,14 +125,18 @@ declare -a small_tables=(
 
 # --- Bulk tables: chunked layout via the Python helper -------------------
 for entry in "${bulk_tables[@]}"; do
-  tbl="${entry%%:*}"
-  pkcol="${entry##*:}"
+  IFS=':' read -r tbl pkcol exclude_cols <<<"${entry}"
+  exclude_args=()
+  if [[ -n "${exclude_cols:-}" ]]; then
+    exclude_args=(--exclude-columns "${exclude_cols}")
+  fi
   python3 "${REPO}/scripts/lib/chunked-table-dump.py" \
       --psql-host "${PGHOST}" --psql-port "${PGPORT}" \
       --psql-user "${PGUSER}" --psql-database "${PGDATABASE}" \
       --pg-dump-path "${PGBIN}/pg_dump" \
       --table "public.${tbl}" \
       --pk-column "${pkcol}" \
+      "${exclude_args[@]}" \
       --out-dir "${OUT_DIR}/${tbl}"
 done
 
@@ -111,17 +147,14 @@ for tbl in "${small_tables[@]}"; do
   "${PGBIN}/pg_dump" \
       --host="${PGHOST}" --port="${PGPORT}" \
       --username="${PGUSER}" --dbname="${PGDATABASE}" \
-      --data-only --column-inserts \
+      --data-only \
       --table="public.${tbl}" \
-    | awk -v prefix="INSERT INTO public.${tbl} " \
-        'index($0, prefix) == 1 { print }' \
-    | LC_ALL=C sort \
     > "${tmp}"
   mv "${tmp}" "${out}"
 done
 
-# --- Drop the legacy monolithic dump on first run of this version. -------
-# Idempotent: a fresh repo without the file just falls through.
+# --- Drop the old monolithic dump.sql (one-time, on the first run of
+#     this version). subsequent runs are no-ops since the file is gone.
 if [[ -f "${OUT_DIR}/dump.sql" ]]; then
   git -C "${REPO}" rm --quiet --cached "hindsight-data/dump.sql" 2>/dev/null || true
   rm -f "${OUT_DIR}/dump.sql"
@@ -141,6 +174,18 @@ find "${OUT_DIR}" -type d -empty -delete
 
 # --- Commit + push only if anything changed ------------------------------
 cd "${REPO}"
+
+# GitHub rejects blobs over 100 MiB. Keep an explicit guard here so a
+# broken rotation never creates another unpushable snapshot commit.
+too_large=$(find "${OUT_DIR}" -type f \
+    \( -name '*.sql' -o -name '.rotation.json' \) \
+    -size +95M -printf '%p %s\n')
+if [[ -n "${too_large}" ]]; then
+  echo "[sync-hindsight] refusing to commit oversized dump files:" >&2
+  echo "${too_large}" >&2
+  exit 1
+fi
+
 git add hindsight-data/
 
 if git diff --cached --quiet; then

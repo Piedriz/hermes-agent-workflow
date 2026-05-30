@@ -110,15 +110,15 @@ done
 
 # --- 4. Restore Hermes state (default yes) ------------------------------
 if (( RESTORE_HERMES )); then
-  if [[ -f "${REPO}/hermes-data/state.sql" ]]; then
-    say "restoring Hermes sessions/messages from hermes-data/state.sql..."
+  if [[ -f "${REPO}/hermes-data/schema.sql" ]]; then
+    say "restoring Hermes sessions/messages from hermes-data/..."
     if (( ASSUME_YES )); then
       "${REPO}/scripts/restore-hermes-state.sh" --yes
     else
       "${REPO}/scripts/restore-hermes-state.sh"
     fi
   else
-    warn "no hermes-data/state.sql — skipping Hermes state restore (fresh install or git-crypt locked?)"
+    warn "no hermes-data/schema.sql — skipping Hermes state restore (fresh install or git-crypt locked?)"
   fi
 else
   say "skipping Hermes state restore"

@@ -1,9 +1,19 @@
 #!/usr/bin/env bash
-# Restore ~/.hermes/state.db from the dump in hermes-data/state.sql.
+# Restore ~/.hermes/state.db from the chunked dump under hermes-data/.
 #
 # Use case: bringing up a host as the new active. Replays sessions +
 # messages from the active-host's last sync. FTS indexes are rebuilt
 # on restore (cheaper to rebuild than to version).
+#
+# Layout consumed:
+#   hermes-data/schema.sql          — CREATE TABLE/INDEX for the 4 tables
+#   hermes-data/sessions.sql        — small full dump
+#   hermes-data/state_meta.sql      — small full dump
+#   hermes-data/schema_version.sql  — small full dump
+#   hermes-data/messages/NNNN.sql   — chunked INSERTs (alpha sort = id order)
+#
+# Replay order: schema.sql first (tables before indexes), then the data
+# files. messages chunks are catted in alpha order (= id-range order).
 #
 # DESTRUCTIVE: replaces ${HOME}/.hermes/state.db. Requires hermes-gateway
 # to be stopped (live writers would race with the replay). Refuses to
@@ -13,10 +23,17 @@
 #   --yes             Skip the confirmation prompt.
 set -euo pipefail
 
-REPO="$(cd "$(dirname "$0")/.." && pwd)"
-DUMP="${REPO}/hermes-data/state.sql"
+REPO="${REPO:-$(cd "$(dirname "$0")/.." && pwd)}"
+DUMP_DIR="${REPO}/hermes-data"
 LIVE_DB="${HOME}/.hermes/state.db"
 ASSUME_YES=0
+
+export PATH="${HOME}/.local/sqlite-3.50.2/bin:${HOME}/miniconda3/bin:/opt/homebrew/bin:/usr/local/bin:${PATH}"
+SQLITE3="$(command -v sqlite3 || true)"
+if [[ -z "${SQLITE3}" ]]; then
+  echo "[restore-hermes-state] sqlite3 not found — install sqlite3 or add it to PATH" >&2
+  exit 1
+fi
 
 for arg in "$@"; do
   case "$arg" in
@@ -35,10 +52,15 @@ die()  { printf '%s✗%s %s\n' "$c_r" "$c_0" "$*" >&2; exit 1; }
 say()  { printf '→ %s\n' "$*"; }
 
 # --- Pre-flight ---------------------------------------------------------
-if [[ ! -f "${DUMP}" ]]; then
-  die "no dump at ${DUMP}.
+if [[ ! -f "${DUMP_DIR}/schema.sql" ]]; then
+  die "no schema dump at ${DUMP_DIR}/schema.sql.
      Run scripts/sync-hermes-state.sh on the previous active host first
      (or unlock git-crypt: git-crypt unlock <key>)."
+fi
+
+# Verify the dumps aren't still git-crypt-encrypted (\0GITCRYPT prefix).
+if [[ "$(head -c 9 "${DUMP_DIR}/schema.sql" | od -An -c | tr -d ' ')" == *"GITCRYPT"* ]]; then
+  die "${DUMP_DIR}/schema.sql is still git-crypt-encrypted. Run: git-crypt unlock <key>"
 fi
 
 # Refuse if gateway is running (would race the replay).
@@ -51,7 +73,7 @@ fi
 if (( ! ASSUME_YES )); then
   cat <<EOF
 ${c_y}This will REPLACE${c_0} ${LIVE_DB} with the contents of:
-  ${DUMP}  ($(du -h "${DUMP}" | cut -f1))
+  ${DUMP_DIR}/  ($(du -sh "${DUMP_DIR}" | cut -f1))
 
 Existing sessions and messages on this host will be wiped. The dump's
 sessions and messages take their place. FTS indexes will be rebuilt
@@ -76,8 +98,25 @@ fi
 say "wiping existing state.db..."
 rm -f "${LIVE_DB}" "${LIVE_DB}-shm" "${LIVE_DB}-wal"
 
-say "replaying ${DUMP}..."
-sqlite3 "${LIVE_DB}" < "${DUMP}"
+# --- Apply schema, then replay data -------------------------------------
+# Schema first (tables before indexes). Then the data files in a single
+# transaction: small tables, then messages chunks in alpha (= id-range)
+# order. Explicit-column INSERTs tolerate the chunk ordering.
+say "applying schema..."
+"${SQLITE3}" "${LIVE_DB}" < "${DUMP_DIR}/schema.sql"
+
+say "replaying data..."
+{
+  echo "BEGIN;"
+  for f in sessions state_meta schema_version; do
+    [[ -f "${DUMP_DIR}/${f}.sql" ]] && cat "${DUMP_DIR}/${f}.sql"
+  done
+  if [[ -d "${DUMP_DIR}/messages" ]]; then
+    find "${DUMP_DIR}/messages" -maxdepth 1 -name '*.sql' -type f \
+      | LC_ALL=C sort | while read -r chunk; do cat "${chunk}"; done
+  fi
+  echo "COMMIT;"
+} | "${SQLITE3}" "${LIVE_DB}"
 ok "data tables loaded"
 
 # --- Rebuild FTS indexes ------------------------------------------------
@@ -87,7 +126,7 @@ ok "data tables loaded"
 # manually from the messages.content column. rowid is aligned with
 # messages.id so the app's existing FTS lookup paths keep working.
 say "rebuilding FTS indexes..."
-sqlite3 "${LIVE_DB}" <<'SQL'
+"${SQLITE3}" "${LIVE_DB}" <<'SQL'
 -- Drop any FTS tables left from a prior partial restore (defensive).
 DROP TABLE IF EXISTS messages_fts;
 DROP TABLE IF EXISTS messages_fts_trigram;
@@ -108,7 +147,7 @@ SQL
 ok "restore complete"
 echo
 echo "Sanity:"
-sqlite3 "${LIVE_DB}" "SELECT
+"${SQLITE3}" "${LIVE_DB}" "SELECT
     (SELECT count(*) FROM sessions) || ' sessions, ' ||
     (SELECT count(*) FROM messages) || ' messages';"
 echo

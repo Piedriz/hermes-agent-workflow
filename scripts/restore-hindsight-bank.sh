@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 # Restore the hindsight memory bank from the encrypted per-table dumps
 # in hindsight-data/. Used during fresh-machine recovery (after git
-# clone + git-crypt unlock) and as the rollback path if a bad write
-# to the bank needs reverting.
+# clone + git-crypt unlock) and as the catch-up step in a multi-host
+# handoff (handoff-in pulls the dumps committed by the previous active host).
 #
 # Layout consumed:
-#   hindsight-data/<table>.sql              — small tables (single file)
-#   hindsight-data/<table>/NNNN.sql         — chunked bulk tables
-#   hindsight-data/<table>/.rotation.json   — chunk metadata (informational
-#                                             here; restore just cats everything)
+#   hindsight-data/<table>.sql          — small tables (single file)
+#   hindsight-data/<table>/NNNN.sql     — chunked bulk tables
+#   hindsight-data/<table>/.rotation.json  — chunk metadata (informational
+#                                            here; restore just cats everything)
 #
 # Workflow:
 #   1. Ensure hindsight-server.service is running (pg0 is embedded in the
@@ -143,6 +143,46 @@ for _ in $(seq 1 30); do
   fi
   sleep 1
 done
+
+# Re-embed: backups omit the pgvector `embedding` column (derived data —
+# ~96% of the memory_units dump bytes; see sync-hindsight-bank.sh
+# --exclude-columns). Restored rows therefore land with embedding=NULL, which
+# breaks vector recall. Reconstruct in place now. Fail LOUD rather than leave
+# a silently-degraded bank: a NULL-embedding bank looks fine on row counts but
+# returns nothing on semantic search.
+NULL_EMB=$("${PGBIN}/psql" \
+    --host="${PGHOST}" --port="${PGPORT}" \
+    --username="${PGUSER}" --dbname="${PGDATABASE}" \
+    --quiet --tuples-only --no-align \
+    -c "SELECT count(*) FROM memory_units WHERE embedding IS NULL" 2>/dev/null || echo 0)
+if [[ "${NULL_EMB}" -gt 0 ]]; then
+  echo "[restore] ${NULL_EMB} memory_units rows have NULL embedding — re-embedding..."
+  ENV_FILE="${HOME}/.hermes/.env"
+  VENV_PY="${HOME}/.hermes/hindsight-server-venv/bin/python"
+  REEMBED="${REPO}/scripts/reembed-hindsight.py"
+  if [[ ! -f "${ENV_FILE}" ]]; then
+    echo "[restore] FATAL: ${ENV_FILE} missing — cannot load embedding provider config." >&2
+    echo "          Bank restored but embeddings are NULL; recall is broken until re-embedded." >&2
+    exit 1
+  fi
+  if [[ ! -x "${VENV_PY}" ]]; then
+    echo "[restore] FATAL: hindsight venv python not found at ${VENV_PY}." >&2
+    exit 1
+  fi
+  # Subshell isolates the sourced env so it can't leak into later steps.
+  (
+    set -a; . "${ENV_FILE}"; set +a
+    export PGPASSWORD="${PGPASSWORD}"
+    "${VENV_PY}" "${REEMBED}" \
+        --psql-host "${PGHOST}" --psql-port "${PGPORT}" \
+        --psql-user "${PGUSER}" --psql-database "${PGDATABASE}"
+  ) || {
+    echo "[restore] FATAL: re-embed failed — bank has NULL embeddings, recall broken." >&2
+    echo "          Fix the embedding provider config (HINDSIGHT_API_EMBEDDINGS_*) and re-run:" >&2
+    echo "          ${VENV_PY} ${REEMBED} --psql-user ${PGUSER} --psql-database ${PGDATABASE}" >&2
+    exit 1
+  }
+fi
 
 echo "[restore] row counts:"
 "${PGBIN}/psql" \
