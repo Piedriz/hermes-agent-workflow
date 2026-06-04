@@ -61,3 +61,13 @@ hermes-data/.gitkeep                   -filter -diff
 # unread/activity state, VAPID keys, and Sidekick-facing message rows.
 sidekick-data/**                       filter=git-crypt diff=git-crypt
 sidekick-data/.gitkeep                 -filter -diff
+
+# === Private workspace project data ===
+# Project-specific live/raw data for the agent's per-user tools. Curated
+# markdown briefings can remain plaintext, but authenticated raw captures,
+# cookies/session-ish exports, screenshots, and SQL dumps should land under
+# these encrypted paths by default in a real fork.
+workspace/projects/**/data/**            filter=git-crypt diff=git-crypt
+workspace/projects/**/encrypted-dumps/** filter=git-crypt diff=git-crypt
+workspace/projects/**/raw-private/**     filter=git-crypt diff=git-crypt
+workspace/documents/**/raw-private/**    filter=git-crypt diff=git-crypt

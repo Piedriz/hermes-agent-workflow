@@ -45,6 +45,23 @@ HERMES_BIN="${HERMES_BIN:-$HOME/.local/bin/hermes}"
 
 mkdir -p "${REPO}/systemd" "${REPO}/sessions"
 
+# --- Multi-host guard ----------------------------------------------------
+# Only the active host runs mutating syncs. ACTIVE_HOST sentinel at repo
+# root names the host that owns writes. See HANDOFF.md for the model.
+# Standby hosts exit silently so cron stays idempotent on both.
+if [[ -f "${REPO}/ACTIVE_HOST" ]]; then
+  active_host=$(grep -E '^active_host=' "${REPO}/ACTIVE_HOST" | head -1 | cut -d= -f2-)
+  if [[ "${active_host}" != "$(hostname)" ]]; then
+    mkdir -p "${HERMES}/logs"
+    echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) standby (active=${active_host:-<unset>})" \
+      > "${HERMES}/logs/sync-hermes.standby" 2>/dev/null || true
+    exit 0
+  fi
+fi
+# Heartbeat marker
+mkdir -p "${HERMES}/logs"
+date -u +%Y-%m-%dT%H:%M:%SZ > "${HERMES}/logs/sync-hermes.heartbeat" 2>/dev/null || true
+
 # Symlink-integrity checks live in scripts/doctor.sh, which runs on its
 # own cron (every 10 min). Keeping snapshot + health concerns separate
 # so this script stays minimal and predictable.
