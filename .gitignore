@@ -7,6 +7,7 @@
 *secret*
 *.key
 !example.*
+!config/.env.example
 
 # Runtime
 *.log
@@ -19,6 +20,19 @@ logs/
 auth.json
 *.bak
 .update_check
+gateway_state.json
+channel_directory.json
+models_dev_cache.json
+provider_models_cache.json
+ollama_cloud_models_cache.json
+.skills_prompt_snapshot.json
+cache/
+sessions/
+skills/.curator_state
+skills/.hub/
+skills/.usage.json
+skills/**/__pycache__/
+.hermes_history
 
 # OS
 .DS_Store
