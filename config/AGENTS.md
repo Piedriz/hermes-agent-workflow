@@ -30,9 +30,15 @@ según el tipo de solicitud.
 - **Mover archivos entre carpetas** → confirmar antes.
 
 ### WhatsApp (vía Lucidbot)
-- Los mensajes de WhatsApp llegan a través de Lucidbot vía webhook.
-- Para responder: el webhook de Lucidbot se encarga del envío.
-- **"Responde a X por WhatsApp"** → usa el endpoint de Lucidbot.
+- Los mensajes de WhatsApp **entrantes** llegan via webhook de Lucidbot.
+- Para **responder** usa el script helper:
+  ```
+  python scripts/lucidbot_send.py --phone "+573001234567" --name "Juan" --message "texto"
+  ```
+- El script usa `LUCIDBOT_ACCESS_TOKEN` del .env para autenticar.
+- Si no sabes el phone, búscalo en la memoria o pregunta al usuario.
+- **NUNCA** envíes mensajes sin confirmar contenido con el usuario.
+- Para mensajes urgentes usa `--priority urgent`.
 
 ### Memoria (hindsight)
 - Usa `recall` para buscar contexto de conversaciones pasadas.
