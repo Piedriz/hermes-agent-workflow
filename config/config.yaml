@@ -316,7 +316,7 @@ dashboard:
 privacy:
   redact_pii: false
 tts:
-  provider: edge
+  provider: openai
   edge:
     voice: es-MX-DaliaNeural
   elevenlabs:
