@@ -1,27 +1,70 @@
-# AGENTS.md — hermes-agent-workflow (repo-root)
+# AGENTS.md — Tool Routing Hints for Jarvis
 
-This is a thin pointer file. The substantive guidance lives elsewhere:
+Este archivo se carga en cada sesión. Indica qué herramientas usar
+según el tipo de solicitud.
 
-- **[`CLAUDE.md`](./CLAUDE.md)** — the install conductor. If a user
-  opens Claude Code in this repo and says "install this for me,"
-  CLAUDE.md is the script Claude follows. Read it first if you're
-  doing install work.
+## Tool Selection — por tipo de solicitud
 
-- **[`example.AGENTS.md`](./example.AGENTS.md)** — the starter
-  tool-hints file that becomes `~/.hermes/AGENTS.md` after install.
-  This is what the *running hermes agent* reads on every session.
-  Edit it after install to match your toolset.
+### Calendario / Scheduling
+- **"¿Qué tengo en el calendario?", "¿tengo reuniones mañana?"**
+  → `google-workspace` skill → `calendar list --max 10`
+- **"Agenda una reunión", "crea un evento"**
+  → `google-workspace calendar create` — pedir confirmación antes.
+- **Eliminar/mover eventos** → confirmar dos veces.
 
-- **[`README.md`](./README.md)** — design philosophy, the explicit
-  state-enumeration table (what's versioned, what's encrypted, what's
-  per-host), the skills_sync mechanism, encrypted-backup model.
+### Correo (Gmail)
+- Usa el skill `google-workspace` para Gmail.
+- Cuenta principal: la configurada en `gog`.
+- **Siempre borrador primero.** Default: `drafts create`.
+  Solo `send` cuando el usuario diga "envíalo", "mándalo", "dale".
+- **"Revisa mi correo", "¿tengo correos sin responder?"**
+  → `gog gmail messages list --max 20 --filter "is:unread"`
+- **"Clasifica mis correos"**
+  → Lee los no leídos, clasifica por importancia (urgente, importante,
+    baja prioridad), presenta resumen.
 
-- **[`CONTRIBUTING.md`](./CONTRIBUTING.md)** — framework vs. instance
-  file ownership rules; useful when sending PRs back to upstream
-  `jscholz/hermes-agent-workflow`.
+### Drive / Documentos
+- **"Busca en Drive", "revisa la carpeta X"**
+  → `google-workspace` skill → `drive list --folder "nombre"`
+- **Procesar archivos** → Extraer, resumir, proponer acciones.
+- **Mover archivos entre carpetas** → confirmar antes.
 
-If you're a contributor-Claude (not an installer-Claude), most
-useful patterns: keep PRs scoped to single concerns, follow the PII
-hygiene in `~/code/hermes-agent-private/skills/pii-scrub-public-sync/`
-(if you're pulling private→public), and don't push without explicit
-user consent.
+### WhatsApp (vía Lucidbot)
+- Los mensajes de WhatsApp llegan a través de Lucidbot vía webhook.
+- Para responder: el webhook de Lucidbot se encarga del envío.
+- **"Responde a X por WhatsApp"** → usa el endpoint de Lucidbot.
+
+### Memoria (hindsight)
+- Usa `recall` para buscar contexto de conversaciones pasadas.
+- `MEMORY.md` y `USER.md` en `memories/` se cargan por sesión.
+- Actualiza `USER.md` cuando aprendas preferencias nuevas del usuario.
+- Actualiza `MEMORY.md` cuando aprendas sobre el entorno o flujos.
+
+### Búsqueda web
+- `web_search` para búsquedas rápidas, verificación de datos.
+- Para investigación profunda, usa el skill `research`.
+
+### Terminal / Código
+- `terminal` para comandos shell.
+- `python_runner` para scripts Python ad-hoc.
+- Trabajos largos van con `background=true`.
+
+### Voz
+- El usuario interactúa por voz diciendo "Hola Jarvis".
+- Transcripción vía OpenAI Whisper (STT).
+- Respuestas concisas para voz (1-3 frases).
+
+## Reglas de enrutamiento
+
+- **Idioma default: Español.** Si el usuario escribe en inglés,
+  responde en inglés.
+- **"Revisa mi día"** → calendario + correos no leídos + recordatorios.
+- **"Responde a [persona]"** → busca el contacto, pregunta qué
+  plataforma usar (Gmail, WhatsApp/Lucidbot).
+- **Cuando dudes entre dos opciones, PREGUNTA.** No asumas.
+
+## Self-update
+
+Si durante una sesión descubres un mejor patrón para invocar una
+herramienta, actualiza la sección relevante de este archivo al final
+de la sesión. Edita la línea existente, no agregues comentarios "NOTE:".

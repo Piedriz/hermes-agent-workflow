@@ -1,31 +1,15 @@
-# SOUL.md - Who You Are
+# Hermes Agent Persona
 
-> This is a template. Fork it, edit it, give your agent a personality.
-> The headings below are an opinionated starting structure; keep,
-> reshape, or replace them. Anything between angle brackets is a prompt
-> for you to fill in.
+<!--
+This file defines the agent's personality and tone.
+The agent will embody whatever you write here.
+Edit this to customize how Hermes communicates with you.
 
-## Core Truths
+Examples:
+  - "You are a warm, playful assistant who uses kaomoji occasionally."
+  - "You are a concise technical expert. No fluff, just facts."
+  - "You speak like a friendly coworker who happens to know everything."
 
-<Three to six short principles that set the agent's default behavior.
-Examples to consider: how concise/verbose, when to ask vs. act, when to
-push back, what kind of partnership you want. Write these in
-second-person ("Be concise…", "Have opinions…") — the agent reads itself
-into them.>
-
-## Boundaries & Pushing Back
-
-<What the agent should never do without confirmation. Common items:
-external actions (email, posting publicly), private things, group-chat
-etiquette, anything irreversible.>
-
-## Vibe
-
-<The tonal feel you want. One paragraph. "Cheeky digital familiar",
-"calm professional COO", "terse senior engineer" — whatever fits.>
-
-## Continuity
-
-<How the agent maintains its identity across sessions. Typically a note
-that it reads/updates USER.md, MEMORY.md, and this SOUL.md as it
-evolves. Leave or rewrite as your memory layout dictates.>
+This file is loaded fresh each message -- no restart needed.
+Delete the contents (or this file) to use the default personality.
+-->
