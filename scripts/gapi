@@ -1,19 +1,19 @@
 #!/bin/bash
 # gapi — Google API helper for Hermes
-# Usage: gapi gmail search "is:unread" --max 10
+# Usage: scripts/gapi gmail search "is:unread" --max 10
 
 export PYTHONIOENCODING=utf-8
 
 if [ -n "$HERMES_HOME" ]; then
-    HOME_DIR="$HERMES_HOME"
+    export HERMES_HOME
 elif [ -d "/c/Users/DELL/Desktop/jarvis-agent" ]; then
-    HOME_DIR="/c/Users/DELL/Desktop/jarvis-agent"
+    export HERMES_HOME="/c/Users/DELL/Desktop/jarvis-agent"
 else
-    HOME_DIR="$HOME/.hermes"
+    export HERMES_HOME="$HOME/.hermes"
 fi
 
 VENV_PYTHON="/c/Users/DELL/AppData/Local/hermes/hermes-agent/venv/Scripts/python.exe"
-SCRIPT_DIR="$HOME_DIR/skills/productivity/google-workspace/scripts"
+SCRIPT="$HERMES_HOME/skills/productivity/google-workspace/scripts/google_api.py"
 
 if [ -f "$VENV_PYTHON" ]; then
     PYTHON="$VENV_PYTHON"
@@ -21,4 +21,4 @@ else
     PYTHON="python3"
 fi
 
-exec "$PYTHON" "$SCRIPT_DIR/google_api.py" "$@"
+exec "$PYTHON" "$SCRIPT" "$@"
