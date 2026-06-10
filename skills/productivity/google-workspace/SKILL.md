@@ -166,76 +166,83 @@ Should print `AUTHENTICATED`. Setup is complete — token refreshes automaticall
 
 ## Usage
 
-Usa el comando `gapi` o `gapi.bat` (wrapper de google_api.py ya configurado). Si no funciona, usa `execute_code`.
+Usa `execute_code` (herramienta nativa de Hermes) para todas las operaciones.
+El token OAuth ya está en `google_token.json`. La API se llama via subprocess
+al Python del entorno.
+
+Define este helper al inicio de cada bloque execute_code:
+
+```python
+import subprocess, os, json
+os.chdir(os.environ.get('HERMES_HOME', '.'))
+PY = subprocess.check_output(['where', 'python']).decode().strip().split('\n')[0] if os.name == 'nt' else 'python3'
+GAPI = 'skills/productivity/google-workspace/scripts/google_api.py'
+def gapi(*args):
+    r = subprocess.run([PY, GAPI] + list(args), capture_output=True, text=True,
+                       env={**os.environ, 'PYTHONIOENCODING': 'utf-8'})
+    if r.returncode != 0:
+        print('ERROR:', r.stderr[:500])
+        return None
+    return json.loads(r.stdout)
+```
 
 ### Gmail
 
-```bash
-# Search (returns JSON array with id, from, subject, date, snippet)
-gapi gmail search "is:unread" --max 10
-gapi gmail search "from:boss@company.com newer_than:1d"
-gapi gmail search "has:attachment filename:pdf newer_than:7d"
-# En Windows usa: gapi.bat gmail search "is:unread" --max 10
+```python
+# Search (returns list of dicts with id, from, subject, date, snippet)
+result = gapi('gmail', 'search', 'is:unread', '--max', '10')
+if result:
+    for email in result:
+        print(f"De: {email['from']} | {email['subject']}")
 
-# Read full message (returns JSON with body text)
-gapi gmail get MESSAGE_ID
+# Read full message
+result = gapi('gmail', 'get', 'MESSAGE_ID')
 
 # Send
-gapi gmail send --to user@example.com --subject "Hello" --body "Message text"
-gapi gmail send --to user@example.com --subject "Report" --body "<h1>Q4</h1><p>Details...</p>" --html
+gapi('gmail', 'send', '--to', 'user@example.com', '--subject', 'Hello', '--body', 'Message')
 
-# Reply (automatically threads and sets In-Reply-To)
-gapi gmail reply MESSAGE_ID --body "Thanks, that works for me."
-
-# Labels
-gapi gmail labels
-gapi gmail modify MESSAGE_ID --add-labels LABEL_ID
-gapi gmail modify MESSAGE_ID --remove-labels UNREAD
+# Reply (auto-threads)
+gapi('gmail', 'reply', 'MESSAGE_ID', '--body', 'Thanks!')
 ```
 
 ### Calendar
 
-```bash
-# List events (defaults to next 7 days)
-gapi calendar list
-gapi calendar list --start 2026-03-01T00:00:00Z --end 2026-03-07T23:59:59Z
+```python
+# List events (next 7 days default)
+result = gapi('calendar', 'list')
+result = gapi('calendar', 'list', '--start', '2026-03-01T00:00:00Z', '--end', '2026-03-07T23:59:59Z')
 
-# Create event (ISO 8601 with timezone required)
-gapi calendar create --summary "Team Standup" --start 2026-03-01T10:00:00-06:00 --end 2026-03-01T10:30:00-06:00
-gapi calendar create --summary "Lunch" --start 2026-03-01T12:00:00Z --end 2026-03-01T13:00:00Z --location "Cafe"
-gapi calendar create --summary "Review" --start 2026-03-01T14:00:00Z --end 2026-03-01T15:00:00Z --attendees "alice@co.com,bob@co.com"
+# Create event
+gapi('calendar', 'create', '--summary', 'Team Standup', '--start', '2026-03-01T10:00:00-06:00', '--end', '2026-03-01T10:30:00-06:00')
+gapi('calendar', 'create', '--summary', 'Lunch', '--start', '2026-03-01T12:00:00Z', '--end', '2026-03-01T13:00:00Z', '--location', 'Cafe')
 
 # Delete event
-gapi calendar delete EVENT_ID
+gapi('calendar', 'delete', 'EVENT_ID')
 ```
 
 ### Drive
 
-```bash
-# Search existing files
-gapi drive search "quarterly report" --max 10
-gapi drive search "mimeType='application/pdf'" --raw-query --max 5
+```python
+# Search files
+result = gapi('drive', 'search', 'quarterly report', '--max', '10')
 
 # Get metadata
-gapi drive get FILE_ID
-
-# Upload a local file
-gapi drive upload /path/to/report.pdf
+result = gapi('drive', 'get', 'FILE_ID')
 
 # Download
-gapi drive download FILE_ID
-gapi drive download DOC_ID --output ~/doc.pdf
+result = gapi('drive', 'download', 'FILE_ID')
 
-# Create a folder
-gapi drive create-folder "Reports"
-gapi drive create-folder "Q4" --parent FOLDER_ID
+# Upload
+gapi('drive', 'upload', '/path/to/report.pdf')
+
+# Create folder
+gapi('drive', 'create-folder', 'Reports')
 
 # Share
-gapi drive share FILE_ID --email alice@example.com --role reader
-gapi drive share FILE_ID --email alice@example.com --role writer --notify
+gapi('drive', 'share', 'FILE_ID', '--email', 'alice@example.com', '--role', 'reader')
 
-# Delete (trash by default)
-gapi drive delete FILE_ID
+# Delete (trash by default, reversible)
+gapi('drive', 'delete', 'FILE_ID')
 ```
 
 ### Contacts
