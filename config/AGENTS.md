@@ -12,43 +12,25 @@ según el tipo de solicitud.
   → `google-workspace calendar create` — pedir confirmación antes.
 - **Eliminar/mover eventos** → confirmar dos veces.
 
-### Correo (Gmail) — USA execute_code con ruta venv Python
-- **NO uses himalaya.** El token OAuth esta en google_token.json.
-- **Python venv:** `C:\Users\DELL\AppData\Local\hermes\hermes-agent\venv\Scripts\python.exe`
-- **Usa execute_code con este patron** para Gmail:
-  ```python
-  import subprocess, os
-  os.chdir(os.environ['HERMES_HOME'])
-  PY = r'C:\Users\DELL\AppData\Local\hermes\hermes-agent\venv\Scripts\python.exe'
-  r = subprocess.run([PY, 'skills/productivity/google-workspace/scripts/google_api.py',
-       'gmail', 'search', 'is:unread', '--max', '20'],
-      capture_output=True, text=True, env={**os.environ, 'PYTHONIOENCODING': 'utf-8'})
-  print(r.stdout[:2000] if r.returncode == 0 else r.stderr[:500])
-  ```
-- **"Clasifica correos"**: mismo patron, evalua el JSON de salida
-- **"Lee correo ID"**: `['gmail', 'get', MESSAGE_ID]`
-- **"Responde"**: `['gmail', 'reply', ID, '--body', 'texto']`
-- **"Envía"**: `['gmail', 'send', '--to', email, '--subject', asunto, '--body', texto]`
+### Correo (Gmail)
+- Usa el comando `gapi` (wrapper de google_api.py).
+- **"Revisa correos"**: `gapi gmail search "is:unread" --max 20`
+- **"Busca correos de X"**: `gapi gmail search "from:persona@correo.com"`
+- **"Lee correo ID"**: `gapi gmail get ID`
+- **"Responde"**: `gapi gmail reply ID --body "texto"`
+- **"Envía correo"**: `gapi gmail send --to email --subject "asunto" --body "texto"`
 - **Siempre confirma antes de enviar.**
+- Himalaya está deshabilitado. Usa solo gapi.
 
-### Calendario — Usa execute_code
-- Mismo patron que Gmail, cambia `'gmail'` por `'calendar'`:
-  ```python
-  import subprocess, os
-  os.chdir(os.environ['HERMES_HOME'])
-  r = subprocess.run(
-      ['python', 'skills/productivity/google-workspace/scripts/google_api.py',
-       'calendar', 'list'], capture_output=True, text=True,
-      env={**os.environ, 'PYTHONIOENCODING': 'utf-8'})
-  print(r.stdout[:2000] if r.returncode == 0 else r.stderr[:500])
-  ```
-- **"Agenda reunion"**: `['calendar', 'create', '--summary', titulo, '--start', ISO, '--end', ISO]`
-- **Eliminar**: confirmar dos veces.
+### Calendario
+- **"¿Qué tengo hoy?"**: `gapi calendar list`
+- **"Agenda reunión"**: `gapi calendar create --summary "título" --start ISO --end ISO`
+- **Eliminar**: doble confirmación.
 
-### Drive — Usa execute_code
-- **"Busca en Drive"**: `['drive', 'search', termino, '--max', '10']`
-- **"Descarga archivo"**: `['drive', 'download', FILE_ID]`
-- **NUNCA borres archivos sin confirmar.**
+### Drive
+- **"Busca en Drive"**: `gapi drive search "término"`
+- **"Descarga archivo"**: `gapi drive download ID`
+- **NUNCA borres sin confirmar.**
 
 ### WhatsApp (vía Lucidbot)
 - Los mensajes de WhatsApp llegan via API de Lucidbot → Hermes `/v1/chat/completions`.
