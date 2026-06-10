@@ -1,42 +1,32 @@
 # =============================================================================
 # Jarvis Agent — docker-compose.yml
-# =============================================================================
-# Desarrollo local:
-#   docker compose up -d
-#   docker compose logs -f gateway
 #
-# Produccion Railway:
+# Mismo archivo para Desarrollo Local y Railway Produccion.
+#
+# Local:
+#   docker compose up -d --build
+#
+# Railway:
 #   railway up
 # =============================================================================
 
 services:
-  gateway:
-    image: nousresearch/hermes-agent:latest
-    container_name: jarvis-gateway
+  jarvis:
+    build: .
+    image: jarvis-agent
+    container_name: jarvis
     restart: unless-stopped
     ports:
       - "18789:18789"
+      - "9119:9119"
     volumes:
-      - .:/opt/data
+      - jarvis_data:/opt/data
     environment:
       - HERMES_UID=10000
       - HERMES_GID=10000
-      - XAI_API_KEY=${XAI_API_KEY:-}
-      - VOICE_TOOLS_OPENAI_KEY=${VOICE_TOOLS_OPENAI_KEY:-}
+      - XAI_API_KEY=${XAI_API_KEY}
+      - VOICE_TOOLS_OPENAI_KEY=${VOICE_TOOLS_OPENAI_KEY}
     command: ["gateway", "run"]
 
-  dashboard:
-    image: nousresearch/hermes-agent:latest
-    container_name: jarvis-dashboard
-    restart: unless-stopped
-    ports:
-      - "9119:9119"
-    depends_on:
-      - gateway
-    volumes:
-      - .:/opt/data
-    environment:
-      - HERMES_UID=10000
-      - HERMES_GID=10000
-      - XAI_API_KEY=${XAI_API_KEY:-}
-    command: ["dashboard", "--host", "0.0.0.0", "--no-open"]
+volumes:
+  jarvis_data:

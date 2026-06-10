@@ -1,71 +1,26 @@
-# =============================================================================
-# SECRETS — NUNCA commitear en texto plano
-# =============================================================================
+# Secrets
 .env
 .env.*
 *.env
-
-# Bloquear cualquier archivo que parezca credencial
 *token*
 *credentials*
 *secret*
 *.key
-
-# Permitir solo ejemplos/placeholders
-!*.example
 !example.*
-!example.config.yaml
 
-# =============================================================================
-# SQLite — bases de datos vivas, nunca versionar
-# =============================================================================
+# Runtime
+*.log
+logs/
 *.db
 *.db-shm
 *.db-wal
-
-# =============================================================================
-# Runtime — archivos generados en vivo, nunca versionar
-# =============================================================================
-*.log
-logs/
-channel_directory.json
-audio_cache/
-image_cache/
-.update_check
-config.yaml.bak.*
-*.bak
-
-# =============================================================================
-# Lock files transitorios
-# =============================================================================
-memories/*.lock
-cron/.tick.lock
-skills/.curator_state
-skills/.curator_backups/
-
-# WhatsApp bridge runtime
-whatsapp/session/bridge.pid
-
-# =============================================================================
-# Archivos generados / simlinks
-# =============================================================================
-plugins/sidekick
-pairing/
-sessions/
-
-# Runtime transitorio de Hermes
-gateway.pid
-gateway.lock
-gateway_state.json
-kanban.db.init.lock
-auth.lock
+*.pid
+*.lock
 auth.json
-.skills_prompt_snapshot.json
-models_dev_cache.json
-skills/.hub/
+*.bak
+.update_check
 
-# Editor/OS cruft
+# OS
 .DS_Store
 *.swp
 *~
-scripts/__pycache__/

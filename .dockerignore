@@ -1,0 +1,10 @@
+# =============================================================================
+# .dockerignore — solo copiamos config/ al build context
+# La imagen ya trae todo: Hermes, skills, dependencias
+# =============================================================================
+*
+!Dockerfile
+!config/
+!config/**
+!docker-compose.yml
+!railway.json
