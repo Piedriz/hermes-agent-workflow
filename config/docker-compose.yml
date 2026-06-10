@@ -1,19 +1,20 @@
 # =============================================================================
 # Jarvis Agent — docker-compose.yml
 #
-# Servicios:
-#   :18789 → Gateway + Dashboard + Cron
-#   :8642  → API OpenAI-compatible (para Lucidbot)
+# Servicios (todos desde la misma imagen):
+#   :18789 → Gateway (cron, webhooks, mensajeria)
+#   :8642  → API OpenAI-compatible (Lucidbot)
+#   :9119  → Dashboard web (chat, sesiones, config)
 #
 # Local:   docker compose up -d --build
 # Railway: railway up
 # =============================================================================
 
 services:
-  jarvis:
+  gateway:
     build: .
     image: jarvis-agent
-    container_name: jarvis
+    container_name: jarvis-gateway
     restart: unless-stopped
     ports:
       - "18789:18789"
@@ -27,6 +28,21 @@ services:
       - API_SERVER_KEY=${API_SERVER_KEY:-jarvis-api-key-secreto}
       - API_SERVER_HOST=0.0.0.0
     command: ["gateway", "run"]
+
+  dashboard:
+    build: .
+    image: jarvis-agent
+    container_name: jarvis-dashboard
+    restart: unless-stopped
+    ports:
+      - "9119:9119"
+    depends_on:
+      - gateway
+    volumes:
+      - jarvis_data:/opt/data
+    environment:
+      - XAI_API_KEY=${XAI_API_KEY}
+    command: ["dashboard", "--host", "0.0.0.0", "--no-open"]
 
 volumes:
   jarvis_data:
