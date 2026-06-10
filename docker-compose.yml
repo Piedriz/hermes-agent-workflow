@@ -21,6 +21,9 @@ services:
       - "9119:9119"
     volumes:
       - jarvis_data:/opt/data
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
     environment:
       - HERMES_UID=10000
       - HERMES_GID=10000
