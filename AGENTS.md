@@ -13,23 +13,22 @@ según el tipo de solicitud.
 - **Eliminar/mover eventos** → confirmar dos veces.
 
 ### Correo (Gmail)
-- Usa el comando `gapi` (wrapper de google_api.py).
-- **"Revisa correos"**: `gapi gmail search "is:unread" --max 20`
-- **"Busca correos de X"**: `gapi gmail search "from:persona@correo.com"`
-- **"Lee correo ID"**: `gapi gmail get ID`
-- **"Responde"**: `gapi gmail reply ID --body "texto"`
-- **"Envía correo"**: `gapi gmail send --to email --subject "asunto" --body "texto"`
-- **Siempre confirma antes de enviar.**
-- Himalaya está deshabilitado. Usa solo gapi.
+- Usa `scripts/gapi` (wrapper de google_api.py). Si falla, usa execute_code.
+- **"Revisa correos"**: `scripts/gapi gmail search "is:unread" --max 20`
+- **"Busca correos de X"**: `scripts/gapi gmail search "from:persona@correo.com"`
+- **"Lee correo ID"**: `scripts/gapi gmail get ID`
+- **"Responde"**: `scripts/gapi gmail reply ID --body "texto"`
+- **"Envía correo"**: `scripts/gapi gmail send --to email --subject "asunto" --body "texto"`
+- **Siempre confirma antes de enviar.** Himalaya está deshabilitado.
 
 ### Calendario
-- **"¿Qué tengo hoy?"**: `gapi calendar list`
-- **"Agenda reunión"**: `gapi calendar create --summary "título" --start ISO --end ISO`
+- **"¿Qué tengo hoy?"**: `scripts/gapi calendar list`
+- **"Agenda reunión"**: `scripts/gapi calendar create --summary "título" --start ISO --end ISO`
 - **Eliminar**: doble confirmación.
 
 ### Drive
-- **"Busca en Drive"**: `gapi drive search "término"`
-- **"Descarga archivo"**: `gapi drive download ID`
+- **"Busca en Drive"**: `scripts/gapi drive search "término"`
+- **"Descarga archivo"**: `scripts/gapi drive download ID`
 - **NUNCA borres sin confirmar.**
 
 ### WhatsApp (vía Lucidbot)
