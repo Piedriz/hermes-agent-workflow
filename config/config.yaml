@@ -146,20 +146,18 @@ updates:
   pre_update_backup: false
   backup_keep: 5
   non_interactive_local_changes: stash
-hooks:
-  enabled: true
-  token: "${LUCIDBOT_WEBHOOK_TOKEN:-jarvis-lucidbot-secret}"
-  path: "/hooks"
-  mappings:
-    lucidbot:
-      action: agent
-      message: |
-        Mensaje de WhatsApp recibido via Lucidbot.
-        De: {{.body.first_name}} {{.body.last_name}} ({{.body.phone}})
-        Mensaje: {{.body.message}}
-        Responde en español, conciso. Si necesitas enviar respuesta,
-        usa el script scripts/lucidbot_send.py con los parametros adecuados.
-      name: "whatsapp-{{.body.phone}}"
+platforms:
+  webhook:
+    enabled: true
+    extra:
+      host: "0.0.0.0"
+      port: 8644
+      secret: "secret-key-asdaksdi37u3jahnnja7"
+  api_server:
+    enabled: true
+    extra:
+      host: "0.0.0.0"
+      key: "jarvis-api-key-secreto"
 
 lucidbot:
   api_url: "https://panel.lucidbot.co/api"
