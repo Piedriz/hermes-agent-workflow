@@ -12,27 +12,44 @@ según el tipo de solicitud.
   → `google-workspace calendar create` — pedir confirmación antes.
 - **Eliminar/mover eventos** → confirmar dos veces.
 
-### Correo (Gmail)
-- Usa el skill `google-workspace` para Gmail.
-- Cuenta principal: la configurada en `gog`.
-- **Siempre borrador primero.** Default: `drafts create`.
-  Solo `send` cuando el usuario diga "envíalo", "mándalo", "dale".
-- **"Revisa mi correo", "¿tengo correos sin responder?"**
-  → `gog gmail messages list --max 20 --filter "is:unread"`
-- **"Clasifica mis correos"**
-  → Lee los no leídos, clasifica por importancia (urgente, importante,
-    baja prioridad), presenta resumen.
+### Correo (Gmail) — USA SOLO google-workspace, NUNCA himalaya
+- **NO uses himalaya.** El token OAuth ya esta configurado en google_token.json.
+- Define primero: `GAPI="python skills/productivity/google-workspace/scripts/google_api.py"`
+- **"Revisa mis correos", "clasifica correos", "últimos emails"**:
+  → `$GAPI gmail search "is:unread" --max 20`
+- **"Busca correos de X"**:
+  → `$GAPI gmail search "from:persona@correo.com" --max 10`
+- **"Lee el correo ID"**:
+  → `$GAPI gmail get MESSAGE_ID`
+- **"Responde a este correo"**:
+  → `$GAPI gmail reply MESSAGE_ID --body "texto de respuesta"`
+- **"Envía un correo a X"**:
+  → `$GAPI gmail send --to email --subject "asunto" --body "texto"`
+- **Siempre confirma antes de enviar.** Muestra el borrador primero.
+
+### Calendario — USA SOLO google-workspace
+- Define: `GAPI="python skills/productivity/google-workspace/scripts/google_api.py"`
+- **"¿Qué tengo hoy/mañana?"** → `$GAPI calendar list`
+- **"Agenda reunion"** → `$GAPI calendar create --summary "titulo" --start ISO --end ISO`
+- **Eliminar evento** → confirmar dos veces.
 
 ### Drive / Documentos
-- **"Busca en Drive", "revisa la carpeta X"**
-  → `google-workspace` skill → `drive list --folder "nombre"`
-- **Procesar archivos** → Extraer, resumir, proponer acciones.
-- **Mover archivos entre carpetas** → confirmar antes.
+- Define: `GAPI="python skills/productivity/google-workspace/scripts/google_api.py"`
+- **"Busca en Drive X"** → `$GAPI drive search "termino" --max 10`
+- **"Sube archivo"** → `$GAPI drive upload /ruta/archivo.pdf`
+- **"Crea carpeta"** → `$GAPI drive create-folder "nombre"`
+- **Procesar archivos** → Descargar con `$GAPI drive download ID`, procesar, resumir.
+- **NUNCA borres archivos sin confirmar.**
 
 ### WhatsApp (vía Lucidbot)
-- Los mensajes de WhatsApp llegan a través de Lucidbot vía webhook.
-- Para responder: el webhook de Lucidbot se encarga del envío.
-- **"Responde a X por WhatsApp"** → usa el endpoint de Lucidbot.
+- Los mensajes de WhatsApp llegan via API de Lucidbot → Hermes `/v1/chat/completions`.
+- El mensaje ya viene formateado como prompt en `messages[0].content`.
+- Para enviar mensajes **proactivos** a WhatsApp (recordatorios, alertas):
+  ```
+  python scripts/lucidbot_send.py --phone "+57300..." --name "Nombre" --message "texto"
+  ```
+- El script usa `LUCIDBOT_ACCESS_TOKEN` del .env.
+- **NUNCA** envíes sin confirmar con el usuario.
 
 ### Memoria (hindsight)
 - Usa `recall` para buscar contexto de conversaciones pasadas.
