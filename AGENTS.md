@@ -12,33 +12,42 @@ según el tipo de solicitud.
   → `google-workspace calendar create` — pedir confirmación antes.
 - **Eliminar/mover eventos** → confirmar dos veces.
 
-### Correo (Gmail) — USA SOLO google-workspace, NUNCA himalaya
-- **NO uses himalaya.** El token OAuth ya esta configurado en google_token.json.
-- Define primero: `GAPI="python skills/productivity/google-workspace/scripts/google_api.py"`
-- **"Revisa mis correos", "clasifica correos", "últimos emails"**:
-  → `$GAPI gmail search "is:unread" --max 20`
-- **"Busca correos de X"**:
-  → `$GAPI gmail search "from:persona@correo.com" --max 10`
-- **"Lee el correo ID"**:
-  → `$GAPI gmail get MESSAGE_ID`
-- **"Responde a este correo"**:
-  → `$GAPI gmail reply MESSAGE_ID --body "texto de respuesta"`
-- **"Envía un correo a X"**:
-  → `$GAPI gmail send --to email --subject "asunto" --body "texto"`
-- **Siempre confirma antes de enviar.** Muestra el borrador primero.
+### Correo (Gmail) — USA execute_code, NUNCA himalaya
+- **NO uses himalaya ni terminal bash.** El token OAuth ya esta en google_token.json.
+- **Usa execute_code con este patron** para todas las operaciones Gmail:
+  ```python
+  import subprocess, os
+  os.chdir(os.environ['HERMES_HOME'])
+  r = subprocess.run(
+      ['python', 'skills/productivity/google-workspace/scripts/google_api.py',
+       'gmail', 'search', 'is:unread', '--max', '20'],
+      capture_output=True, text=True,
+      env={**os.environ, 'PYTHONIOENCODING': 'utf-8'})
+  print(r.stdout[:2000] if r.returncode == 0 else r.stderr[:500])
+  ```
+- **"Clasifica correos"**: same pattern, cambia search query
+- **"Lee correo ID"**: `['gmail', 'get', MESSAGE_ID]`
+- **"Responde"**: `['gmail', 'reply', ID, '--body', 'texto']`
+- **"Envía correo"**: `['gmail', 'send', '--to', email, '--subject', asunto, '--body', texto]`
+- **Siempre confirma antes de enviar.**
 
-### Calendario — USA SOLO google-workspace
-- Define: `GAPI="python skills/productivity/google-workspace/scripts/google_api.py"`
-- **"¿Qué tengo hoy/mañana?"** → `$GAPI calendar list`
-- **"Agenda reunion"** → `$GAPI calendar create --summary "titulo" --start ISO --end ISO`
-- **Eliminar evento** → confirmar dos veces.
+### Calendario — Usa execute_code
+- Mismo patron que Gmail, cambia `'gmail'` por `'calendar'`:
+  ```python
+  import subprocess, os
+  os.chdir(os.environ['HERMES_HOME'])
+  r = subprocess.run(
+      ['python', 'skills/productivity/google-workspace/scripts/google_api.py',
+       'calendar', 'list'], capture_output=True, text=True,
+      env={**os.environ, 'PYTHONIOENCODING': 'utf-8'})
+  print(r.stdout[:2000] if r.returncode == 0 else r.stderr[:500])
+  ```
+- **"Agenda reunion"**: `['calendar', 'create', '--summary', titulo, '--start', ISO, '--end', ISO]`
+- **Eliminar**: confirmar dos veces.
 
-### Drive / Documentos
-- Define: `GAPI="python skills/productivity/google-workspace/scripts/google_api.py"`
-- **"Busca en Drive X"** → `$GAPI drive search "termino" --max 10`
-- **"Sube archivo"** → `$GAPI drive upload /ruta/archivo.pdf`
-- **"Crea carpeta"** → `$GAPI drive create-folder "nombre"`
-- **Procesar archivos** → Descargar con `$GAPI drive download ID`, procesar, resumir.
+### Drive — Usa execute_code
+- **"Busca en Drive"**: `['drive', 'search', termino, '--max', '10']`
+- **"Descarga archivo"**: `['drive', 'download', FILE_ID]`
 - **NUNCA borres archivos sin confirmar.**
 
 ### WhatsApp (vía Lucidbot)
