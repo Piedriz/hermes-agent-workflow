@@ -12,23 +12,23 @@ según el tipo de solicitud.
   → `google-workspace calendar create` — pedir confirmación antes.
 - **Eliminar/mover eventos** → confirmar dos veces.
 
-### Correo (Gmail) — USA execute_code, NUNCA himalaya
-- **NO uses himalaya ni terminal bash.** El token OAuth ya esta en google_token.json.
-- **Usa execute_code con este patron** para todas las operaciones Gmail:
+### Correo (Gmail) — USA execute_code con ruta venv Python
+- **NO uses himalaya.** El token OAuth esta en google_token.json.
+- **Python venv:** `C:\Users\DELL\AppData\Local\hermes\hermes-agent\venv\Scripts\python.exe`
+- **Usa execute_code con este patron** para Gmail:
   ```python
   import subprocess, os
   os.chdir(os.environ['HERMES_HOME'])
-  r = subprocess.run(
-      ['python', 'skills/productivity/google-workspace/scripts/google_api.py',
+  PY = r'C:\Users\DELL\AppData\Local\hermes\hermes-agent\venv\Scripts\python.exe'
+  r = subprocess.run([PY, 'skills/productivity/google-workspace/scripts/google_api.py',
        'gmail', 'search', 'is:unread', '--max', '20'],
-      capture_output=True, text=True,
-      env={**os.environ, 'PYTHONIOENCODING': 'utf-8'})
+      capture_output=True, text=True, env={**os.environ, 'PYTHONIOENCODING': 'utf-8'})
   print(r.stdout[:2000] if r.returncode == 0 else r.stderr[:500])
   ```
-- **"Clasifica correos"**: same pattern, cambia search query
+- **"Clasifica correos"**: mismo patron, evalua el JSON de salida
 - **"Lee correo ID"**: `['gmail', 'get', MESSAGE_ID]`
 - **"Responde"**: `['gmail', 'reply', ID, '--body', 'texto']`
-- **"Envía correo"**: `['gmail', 'send', '--to', email, '--subject', asunto, '--body', texto]`
+- **"Envía"**: `['gmail', 'send', '--to', email, '--subject', asunto, '--body', texto]`
 - **Siempre confirma antes de enviar.**
 
 ### Calendario — Usa execute_code
