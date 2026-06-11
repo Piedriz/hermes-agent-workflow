@@ -79,8 +79,11 @@ def query_hermes(text: str) -> str:
             HERMES_API,
             json={
                 "model": MODEL_NAME,
-                "messages": [{"role": "user", "content": text}],
-                "max_tokens": 300,
+                "messages": [
+                    {"role": "system", "content": "Eres Jarvis. Responde SIEMPRE en español, conciso y amable."},
+                    {"role": "user", "content": text}
+                ],
+                "max_tokens": 200,
             },
             headers={
                 "Authorization": f"Bearer {API_KEY}",
@@ -179,13 +182,13 @@ def process_audio():
                     if response and not response.startswith("("):
                         print(f"   [TTS]: {response[:80]}...", flush=True)
 
-                    # Drenar audio residual
-                    drain = time.time()
-                    while time.time() - drain < 0.5:
-                        try:
-                            audio_queue.get(timeout=0.1)
-                        except queue.Empty:
-                            break
+                # Drenar audio residual + cooldown
+                drain = time.time()
+                while time.time() - drain < 2.0:
+                    try:
+                        audio_queue.get(timeout=0.1)
+                    except queue.Empty:
+                        break
 
                 print("   Escuchando...", flush=True)
             except Exception as e:
