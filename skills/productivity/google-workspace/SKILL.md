@@ -166,7 +166,10 @@ Should print `AUTHENTICATED`. Setup is complete — token refreshes automaticall
 
 ## Usage
 
-Usa `execute_code`. Copia y pega este bloque exacto (cambiando solo el comando final):
+**YA ESTAS AUTENTICADO.** El token OAuth está en `google_token.json`.
+No preguntes si está configurado. Simplemente ejecuta.
+
+Usa `execute_code`. Copia y pega este bloque exacto:
 
 ```python
 import subprocess, os, json
