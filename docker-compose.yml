@@ -29,6 +29,7 @@ services:
     restart: unless-stopped
     ports:
       - "8642:8642"
+      - "9119:9119"
       - "18789:18789"
     depends_on:
       init:
@@ -42,29 +43,11 @@ services:
       - TAVILY_API_KEY=${TAVILY_API_KEY}
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
       - API_SERVER_ENABLED=true
-      - API_SERVER_KEY=${API_SERVER_KEY:-jarvis-api-key-secreto}
       - API_SERVER_HOST=0.0.0.0
+      - API_SERVER_KEY=${API_SERVER_KEY:-jarvis-api-key-secreto}
+      - HERMES_DASHBOARD=1
       - HERMES_HOME=/opt/data
-    entrypoint: ["/opt/hermes/.venv/bin/hermes"]
-    command: ["gateway"]
-
-  dashboard:
-    build: .
-    image: jarvis-agent
-    container_name: jarvis-dashboard
-    restart: unless-stopped
-    ports:
-      - "9119:9119"
-    depends_on:
-      gateway:
-        condition: service_started
-    volumes:
-      - jarvis_data:/opt/data
-    environment:
-      - XAI_API_KEY=${XAI_API_KEY}
-      - HERMES_HOME=/opt/data
-    entrypoint: ["/opt/hermes/.venv/bin/hermes"]
-    command: ["dashboard", "--host", "0.0.0.0", "--no-open"]
+    command: ["gateway", "run"]
 
   tools:
     build: .
