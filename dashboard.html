@@ -114,7 +114,7 @@ async function initSession() {
     });
     if (resp.ok) {
       const data = await resp.json();
-      sessionId = data.id;
+      sessionId = data.session?.id || data.id;
       sessionLabel.textContent = 'sesión: ' + sessionId.slice(-8);
       statusDot.className = 'dot';
       statusEl.textContent = 'Cliquea 🎤 para empezar';
