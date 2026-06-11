@@ -89,7 +89,8 @@
 // === CONFIG ===
 const API_BASE = 'http://127.0.0.1:8642';
 const API_KEY = 'jarvis-api-key-secreto';
-const MODEL = 'openai/gpt-4.1-mini';
+const MODEL = 'grok-4';
+const TOOLS_URL = 'http://127.0.0.1:8646';
 const SYSTEM_PROMPT = 'Eres Jarvis. Tienes acceso a Gmail via execute_code. Google OAuth YA configurado. USA execute_code AHORA. NUNCA digas que no tienes acceso o no puedes. Responde en español.';
 let sessionId = null;
 
@@ -129,15 +130,49 @@ async function initSession() {
 
 // === Chat con sesión persistente ===
 async function queryJarvis(text) {
-  if (!sessionId) { addMessage('Jarvis no está conectado. Recarga la página.', 'status'); return; }
+  if (!sessionId) { addMessage('Jarvis no está conectado.', 'status'); return; }
   isProcessing = true;
-
-  const enhancedText = text + '\n\n[TIENES execute_code, terminal, skills. USA TUS HERRAMIENTAS AHORA. NO DIGAS QUE NO PUEDES.]';
-
   statusEl.textContent = 'Pensando...';
   statusDot.className = 'dot off';
   micBtn.className = 'thinking';
 
+  // Detectar comandos de herramientas
+  const lower = text.toLowerCase();
+  if (lower.includes('correo') || lower.includes('gmail') || lower.includes('email') || lower.includes('bandeja')) {
+    addMessage('Revisando tu Gmail...', 'jarvis');
+    try {
+      const r = await fetch(TOOLS_URL, {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({action: 'gmail_search', query: 'is:unread', max: 5})
+      });
+      const data = await r.json();
+      if (data.ok && Array.isArray(data.ok)) {
+        const list = data.ok.map(e => `• ${e.from} - ${e.subject} (${e.date?.slice(0,10)})`).join('\n');
+        addMessage('Tus últimos correos:\n' + list, 'jarvis');
+        speak('Tienes ' + data.ok.length + ' correos no leídos.');
+      } else {
+        addMessage('No se pudieron leer los correos: ' + JSON.stringify(data.error || data), 'jarvis');
+      }
+    } catch(e) { addMessage('Error al conectar con Gmail.', 'jarvis'); }
+    isProcessing = false; statusDot.className = 'dot'; micBtn.className = 'active'; statusEl.textContent = 'Escuchando...';
+    return;
+  }
+
+  if (lower.includes('calendario') || lower.includes('reunión') || lower.includes('evento')) {
+    addMessage('Revisando tu calendario...', 'jarvis');
+    try {
+      const r = await fetch(TOOLS_URL, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action: 'calendar_list'})});
+      const data = await r.json();
+      if (data.ok && Array.isArray(data.ok)) {
+        const list = data.ok.slice(0,5).map(e => `• ${e.summary} - ${e.start?.dateTime || e.start?.date}`).join('\n');
+        addMessage('Próximos eventos:\n' + (list || 'Ninguno'), 'jarvis');
+      }
+    } catch(e) { addMessage('Error al conectar con Calendario.', 'jarvis'); }
+    isProcessing = false; statusDot.className = 'dot'; micBtn.className = 'active'; statusEl.textContent = 'Escuchando...';
+    return;
+  }
+
+  // Para todo lo demas, usar Grok
   try {
     const resp = await fetch(API_BASE + '/api/sessions/' + sessionId + '/chat', {
       method: 'POST',
