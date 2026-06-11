@@ -117,8 +117,26 @@ const sessionLabel = document.getElementById('sessionId');
 
 let isProcessing = false;
 
-// === Crear sesión persistente ===
+// === Crear sesión persistente (reusa si ya existe) ===
 async function initSession() {
+  // Reusar sesión guardada
+  const saved = localStorage.getItem('jarvis_session_id');
+  if (saved) {
+    // Verificar que siga viva
+    try {
+      const check = await fetch(API_BASE + '/api/sessions/' + saved, {
+        headers: { 'Authorization': 'Bearer ' + API_KEY }
+      });
+      if (check.ok) {
+        sessionId = saved;
+        sessionLabel.textContent = 'sesión: ' + sessionId.slice(-8);
+        statusDot.className = 'dot';
+        statusEl.textContent = 'Cliquea 🎤 para empezar';
+        return;
+      }
+    } catch(e) {}
+  }
+
   try {
     const resp = await fetch(API_BASE + '/api/sessions', {
       method: 'POST',
@@ -128,6 +146,7 @@ async function initSession() {
     if (resp.ok) {
       const data = await resp.json();
       sessionId = data.session?.id || data.id;
+      localStorage.setItem('jarvis_session_id', sessionId);
       sessionLabel.textContent = 'sesión: ' + sessionId.slice(-8);
       statusDot.className = 'dot';
       statusEl.textContent = 'Cliquea 🎤 para empezar';
