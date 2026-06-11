@@ -132,6 +132,10 @@ async function initSession() {
 async function queryJarvis(text) {
   if (!sessionId) { addMessage('Jarvis no está conectado. Recarga la página.', 'status'); return; }
   isProcessing = true;
+
+  // Inyectar instruccion de tools en cada mensaje
+  const enhancedText = text + '\n\n[USA TUS HERRAMIENTAS. TIENES execute_code. NO DIGAS QUE NO PUEDES.]';
+
   statusEl.textContent = 'Pensando...';
   statusDot.className = 'dot off';
   micBtn.className = 'thinking';
@@ -140,7 +144,7 @@ async function queryJarvis(text) {
     const resp = await fetch(API_BASE + '/api/sessions/' + sessionId + '/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + API_KEY },
-      body: JSON.stringify({ message: text }),
+      body: JSON.stringify({ message: enhancedText }),
     });
 
     if (!resp.ok) {
