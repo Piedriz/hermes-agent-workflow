@@ -1,6 +1,6 @@
 model:
-  default: openai/gpt-4.1-mini
-  provider: openrouter
+  default: grok-4
+  provider: grok
 providers: {}
 fallback_providers: []
 credential_pool_strategies: {}
@@ -399,7 +399,8 @@ prefill_messages_file: ''
 goals:
   max_turns: 20
 skills:
-  external_dirs: []
+  external_dirs:
+    - C:\Users\DELL\Desktop\jarvis-agent\skills
   template_vars: true
   inline_shell: false
   inline_shell_timeout: 10
