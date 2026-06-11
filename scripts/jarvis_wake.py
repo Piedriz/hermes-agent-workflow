@@ -1,19 +1,19 @@
 """
-jarvis_wake.py — Wake word "Hey Jarvis" con OpenWakeWord (GRATIS).
+jarvis_wake.py — Wake word "Hey Jarvis" con OpenWakeWord.
 
-Escucha continuamente. Al detectar "Hey Jarvis":
-  1. Graba audio hasta silencio
-  2. Transcribe con OpenAI Whisper
-  3. Envia texto a Hermes (sesion persistente)
-  4. Responde con TTS (Edge gratuito)
+Optimizado para baja latencia:
+  - STT local: faster-whisper (sin red)
+  - TTS local: pyttsx3 (sin subprocess)
+  - Hermes: HTTP POST a API server :8642 (sin spawn)
 
 Ejecutar: python scripts/jarvis_wake.py
 """
 
-import os, sys, json, time, io, queue, wave, struct, threading, subprocess
+import os, sys, json, time, io, queue, wave, threading
 
 import numpy as np
 import sounddevice as sd
+import requests
 from openwakeword.model import Model
 
 # === CONFIG ===
@@ -21,40 +21,20 @@ HERMES_HOME = os.environ.get(
     "HERMES_HOME",
     os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."),
 )
-HERMES_BIN = os.path.join(
-    os.environ.get("LOCALAPPDATA", os.path.expanduser("~")),
-    "hermes", "hermes-agent", "venv", "Scripts", "hermes.exe",
-)
-
-OPENAI_KEY = ""
-
-def _load_keys():
-    global OPENAI_KEY
-    env_file = os.path.join(HERMES_HOME, ".env")
-    try:
-        with open(env_file) as f:
-            for line in f:
-                line = line.strip()
-                if line.startswith("VOICE_TOOLS_OPENAI_KEY="):
-                    OPENAI_KEY = line.split("=", 1)[1].strip().strip("\"'")
-                elif line.startswith("OPENAI_API_KEY=") and not OPENAI_KEY:
-                    OPENAI_KEY = line.split("=", 1)[1].strip().strip("\"'")
-    except FileNotFoundError:
-        pass
-    OPENAI_KEY = (
-        OPENAI_KEY
-        or os.environ.get("VOICE_TOOLS_OPENAI_KEY")
-        or os.environ.get("OPENAI_API_KEY")
-        or ""
-    )
+HERMES_API = os.environ.get("HERMES_API_URL", "http://127.0.0.1:8642/v1/chat/completions")
+API_KEY = os.environ.get("API_SERVER_KEY", "jarvis-api-key-secreto")
+MODEL_NAME = os.environ.get("LLM_MODEL", "grok-4")
 
 SAMPLE_RATE = 16000
-CHUNK_SIZE = 1280  # 80ms at 16kHz
+CHUNK_SIZE = 1280
 SILENCE_THRESHOLD = 0.02
-SILENCE_SECONDS = 1.5
+SILENCE_SECONDS = 0.8
 MAX_RECORD_SECS = 10
-WAKE_THRESHOLD = 0.15  # sin normalizacion, puntuaciones mas bajas
+WAKE_THRESHOLD = 0.15
 
+# === MOTORES (inicializados en main) ===
+whisper_model = None
+tts_engine = None
 model = None
 audio_queue = queue.Queue()
 is_recording = False
@@ -62,81 +42,55 @@ recording_frames = []
 
 
 def transcribe(audio_wav: bytes) -> str:
-    if not OPENAI_KEY:
-        return "ERROR: sin API key"
-    boundary = "----WhisperBoundary"
-    body = (
-        f"--{boundary}\r\n"
-        'Content-Disposition: form-data; name="model"\r\n\r\nwhisper-1\r\n'
-        f"--{boundary}\r\n"
-        'Content-Disposition: form-data; name="language"\r\n\r\nes\r\n'
-        f"--{boundary}\r\n"
-        'Content-Disposition: form-data; name="file"; filename="audio.wav"\r\n'
-        "Content-Type: audio/wav\r\n\r\n"
-    ).encode() + audio_wav + f"\r\n--{boundary}--\r\n".encode()
-
-    from urllib.request import Request, urlopen
-    req = Request("https://api.openai.com/v1/audio/transcriptions", data=body)
-    req.add_header("Authorization", f"Bearer {OPENAI_KEY}")
-    req.add_header("Content-Type", f"multipart/form-data; boundary={boundary}")
+    """STT local con faster-whisper (base model, CPU int8)."""
+    global whisper_model
+    import tempfile
+    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
+        f.write(audio_wav)
+        tmp = f.name
     try:
-        with urlopen(req, timeout=30) as resp:
-            return json.loads(resp.read()).get("text", "").strip()
+        segments, _ = whisper_model.transcribe(tmp, language="es", beam_size=5)
+        text = " ".join(s.text for s in segments).strip()
     except Exception as e:
-        return f"ERROR: {e}"
+        text = f"ERROR: {e}"
+    os.unlink(tmp)
+    return text
 
 
 def speak(text: str):
-    """TTS via Windows SAPI (gratuito, offline, sincrono)."""
+    """TTS local con pyttsx3."""
+    global tts_engine
     try:
-        safe = text.replace("'", "''")
-        subprocess.run(
-            [
-                "powershell", "-Command",
-                "Add-Type -AssemblyName System.Speech; "
-                f"$s = New-Object System.Speech.Synthesis.SpeechSynthesizer; "
-                f"$s.Speak('{safe}')",
-            ],
-            capture_output=True, timeout=60,
-        )
+        tts_engine.say(text)
+        tts_engine.runAndWait()
     except Exception:
         pass
 
 
 def query_hermes(text: str) -> str:
+    """HTTP POST al API server de Hermes (:8642)."""
     try:
-        r = subprocess.run(
-            [HERMES_BIN, "chat", "-q", text, "--max-turns", "3"],
-            capture_output=True, text=True, timeout=60,
-            env={**os.environ, "HERMES_HOME": HERMES_HOME, "PYTHONIOENCODING": "utf-8"},
-            cwd=HERMES_HOME,
-            encoding="utf-8",
-            stdin=subprocess.DEVNULL,
+        r = requests.post(
+            HERMES_API,
+            json={
+                "model": MODEL_NAME,
+                "messages": [{"role": "user", "content": text}],
+                "max_tokens": 300,
+            },
+            headers={
+                "Authorization": f"Bearer {API_KEY}",
+                "Content-Type": "application/json",
+            },
+            timeout=60,
         )
-        output = r.stdout
-        # Buscar la respuesta dentro de las lineas del box de Hermes
-        in_box = False
-        lines = []
-        for line in output.split('\n'):
-            if '╭─' in line or '┌─' in line:
-                in_box = True
-                continue
-            if '╰─' in line or '└─' in line:
-                in_box = False
-                continue
-            if not in_box:
-                continue
-            clean = line.strip().lstrip('│╭╰┌└╮╯ ').strip()
-            import re
-            clean = re.sub(r'\x1b\[[0-9;]*m', '', clean)
-            if clean and not clean.startswith('Query:') and not clean.startswith('Session:'):
-                lines.append(clean)
-        result = ' '.join(lines).strip()
-        if not result and r.stderr:
-            return f"(error: {r.stderr[:200]})"
-        return result if result else "(sin respuesta)"
-    except subprocess.TimeoutExpired:
-        return "(timeout - el agente tardo demasiado)"
+        if r.status_code == 200:
+            data = r.json()
+            return data["choices"][0]["message"]["content"].strip()
+        return f"(HTTP {r.status_code})"
+    except requests.Timeout:
+        return "(timeout)"
+    except Exception as e:
+        return f"(error: {e})"
 
 
 def audio_callback(indata, frames, time_info, status):
@@ -154,12 +108,11 @@ def process_audio():
             recording_frames.extend(audio_16k.tolist())
             continue
 
-        # Wake word detection (sin normalizar, el modelo espera audio crudo)
         prediction = model.predict(audio_16k)
         score = prediction.get("hey_jarvis", 0)
 
         if score >= WAKE_THRESHOLD:
-            print(f"\n   Jarvis activado! (score: {score:.2f})", flush=True)
+            print(f"\n   Activado (score: {score:.2f})", flush=True)
             is_recording = True
             recording_frames = list(audio_16k.tolist())
 
@@ -184,13 +137,8 @@ def process_audio():
 
             is_recording = False
 
-            # WAV (normalizar volumen bajo)
-            audio_np = np.array(recording_frames, dtype=np.int16).astype(np.float32)
-            peak = np.max(np.abs(audio_np))
-            if peak > 1:
-                audio_np = (audio_np / peak * 32767).astype(np.int16)
-            else:
-                audio_np = audio_np.astype(np.int16)
+            # WAV
+            audio_np = np.array(recording_frames, dtype=np.int16)
             wav_buf = io.BytesIO()
             with wave.open(wav_buf, "wb") as wf:
                 wf.setnchannels(1)
@@ -198,38 +146,57 @@ def process_audio():
                 wf.setframerate(SAMPLE_RATE)
                 wf.writeframes(audio_np.tobytes())
 
+            start_stt = time.time()
             text = transcribe(wav_buf.getvalue())
-            print(f"   Tu: {text}", flush=True)
+            print(f"   STT ({time.time()-start_stt:.1f}s): {text}", flush=True)
 
             if text and not text.startswith("ERROR"):
-                print("   Jarvis pensando...", flush=True)
+                start_llm = time.time()
                 response = query_hermes(text)
-                print(f"   Jarvis: {response}", flush=True)
-                if response and response != "(sin respuesta)":
-                    speak(response)  # sincrono: espera a que termine de hablar
+                print(f"   Jarvis ({time.time()-start_llm:.1f}s): {response}", flush=True)
 
-                # Descartar audio residual del parlante (evita feedback loop)
-                drain_start = time.time()
-                while time.time() - drain_start < 1.0:
+                if response and not response.startswith("("):
+                    speak(response)
+
+                # Drenar audio residual
+                drain = time.time()
+                while time.time() - drain < 0.5:
                     try:
                         audio_queue.get(timeout=0.1)
                     except queue.Empty:
                         break
-                print("   Escuchando...", flush=True)
+
+            print("   Escuchando...", flush=True)
 
 
 def main():
-    global model
-    _load_keys()
+    global model, whisper_model, tts_engine
 
     import openwakeword
     openwakeword.utils.download_models()
 
-    model = Model(wakeword_models=["hey_jarvis"], vad_threshold=0)
+    # === INICIALIZACIONES PESADAS (solo una vez) ===
+    print("Cargando motores...", flush=True)
 
+    t_start = time.time()
+    model = Model(wakeword_models=["hey_jarvis"])
+    print(f"  OpenWakeWord: {time.time()-t_start:.1f}s", flush=True)
+
+    t_start = time.time()
+    from faster_whisper import WhisperModel
+    whisper_model = WhisperModel("base", device="cpu", compute_type="int8")
+    print(f"  faster-whisper: {time.time()-t_start:.1f}s", flush=True)
+
+    t_start = time.time()
+    import pyttsx3
+    tts_engine = pyttsx3.init()
+    tts_engine.setProperty("rate", 180)
+    print(f"  pyttsx3: {time.time()-t_start:.1f}s", flush=True)
+
+    # === ARRANQUE ===
     print("=" * 50)
-    print("  Jarvis Wake — di 'Hey Jarvis' para activar")
-    print("  OpenWakeWord (gratis, sin API key)")
+    print("  Jarvis Wake — 'Hey Jarvis'")
+    print("  STT: faster-whisper | TTS: pyttsx3 | LLM: API :8642")
     print("  Ctrl+C para salir")
     print("=" * 50)
 
