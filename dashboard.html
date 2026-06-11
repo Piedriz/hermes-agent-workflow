@@ -180,6 +180,7 @@ sessionLabel.textContent = 'sesión: ' + sessionId.slice(-8);
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 let recognition = null;
 let isListening = false;
+let isProcessing = false;  // bloquea resultados mientras Jarvis piensa
 let wakeEnabled = true;
 
 if (SpeechRecognition) {
@@ -190,6 +191,8 @@ if (SpeechRecognition) {
   recognition.maxAlternatives = 1;
 
   recognition.onresult = (event) => {
+    if (isProcessing) return;  // esperar a que termine de responder
+
     const result = event.results[event.results.length - 1];
     if (!result.isFinal) return;
     const text = result[0].transcript.trim();
@@ -198,7 +201,6 @@ if (SpeechRecognition) {
     // Wake word detection
     const lower = text.toLowerCase();
     if (wakeEnabled && (lower.includes('jarvis') || lower.includes('hey jarvis') || lower.includes('hola jarvis'))) {
-      // Extract what comes after the wake word
       const idx = Math.max(
         lower.indexOf('jarvis') + 6,
         lower.indexOf('hey jarvis') + 10,
@@ -209,16 +211,14 @@ if (SpeechRecognition) {
         addMessage(command, 'user');
         queryJarvis(command);
       } else {
-        addMessage('¿En qué puedo ayudarte?', 'jarvis');
-        speak('¿En qué puedo ayudarte?');
+        speak('Dime, ¿en qué puedo ayudarte?');
       }
-      stopListening();
       return;
     }
 
+    // Sin wake word: solo procesa si ya fue activado
     addMessage(text, 'user');
     queryJarvis(text);
-    stopListening();
   };
 
   recognition.onerror = (e) => {
@@ -268,6 +268,7 @@ function addStatus(text) {
 
 // === API ===
 async function queryJarvis(text) {
+  isProcessing = true;
   statusEl.textContent = 'Pensando...';
   statusDot.className = 'dot off';
   micBtn.className = 'thinking';
@@ -300,10 +301,11 @@ async function queryJarvis(text) {
     speak(reply);
 
   } catch (e) {
-    addMessage('Error: No se pudo conectar a Jarvis en ' + API_URL, 'jarvis');
+    addMessage('Error: No se pudo conectar a Jarvis (' + API_URL + ')', 'jarvis');
     console.error(e);
   } finally {
-    statusEl.textContent = 'Listo';
+    isProcessing = false;
+    statusEl.textContent = wakeEnabled ? 'Di "Hey Jarvis"...' : 'Escuchando...';
     statusDot.className = 'dot';
     micBtn.className = '';
   }
