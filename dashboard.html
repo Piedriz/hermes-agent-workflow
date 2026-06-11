@@ -184,9 +184,9 @@ async function initSession() {
 // === Chat con sesión persistente ===
 async function queryJarvis(text) {
   isProcessing = true;
+  voiceMode = 'processing';
+  updateMicUI();
   statusEl.textContent = 'Pensando...';
-  statusDot.className = 'dot off';
-  micBtn.className = 'thinking';
 
   try {
     const resp = await fetch(TOOLS_URL, {
@@ -211,9 +211,10 @@ async function queryJarvis(text) {
     console.error(e);
   } finally {
     isProcessing = false;
+    voiceMode = 'active';
+    updateMicUI();
     statusEl.textContent = 'Escuchando...';
-    statusDot.className = 'dot';
-    micBtn.className = 'active';
+    startSilenceTimer();
   }
 }
 
@@ -221,6 +222,9 @@ async function queryJarvis(text) {
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 let recognition = null;
 let micActive = false;
+let voiceMode = 'idle';  // idle | active | processing
+let silenceTimer = null;
+const SILENCE_TIMEOUT = 5000; // 5s sin hablar vuelve a idle
 
 function setupRecognition() {
   if (!SpeechRecognition) return;
@@ -231,24 +235,42 @@ function setupRecognition() {
   recognition.maxAlternatives = 1;
 
   recognition.onresult = (event) => {
-    if (isProcessing) return;
+    if (voiceMode === 'processing') return;
     const result = event.results[event.results.length - 1];
     if (!result.isFinal) return;
     const text = result[0].transcript.trim();
     if (!text || text.length < 2) return;
 
-    // Wake word "jarvis"
     const lower = text.toLowerCase();
-    if (lower.includes('jarvis') || lower.includes('hey jarvis') || lower.includes('hola jarvis')) {
-      const idx = Math.max(
-        lower.indexOf('jarvis') + 6, lower.indexOf('hey jarvis') + 10, lower.indexOf('hola jarvis') + 11
-      );
-      const command = text.substring(idx).trim();
-      if (command) { addMessage(command, 'user'); queryJarvis(command); return; }
+    const isWake = lower.includes('jarvis') || lower.includes('hey jarvis') || lower.includes('hola jarvis');
+
+    // IDLE: solo reacciona al wake word
+    if (voiceMode === 'idle') {
+      if (isWake) {
+        voiceMode = 'active';
+        updateMicUI();
+        clearTimeout(silenceTimer);
+        speak('Dime');
+        const idx = Math.max(lower.indexOf('jarvis') + 6, lower.indexOf('hey jarvis') + 10, lower.indexOf('hola jarvis') + 11);
+        const command = text.substring(idx).trim();
+        if (command) {
+          addMessage(command, 'user');
+          queryJarvis(command);
+        }
+      }
+      return;
     }
-    // Cualquier frase después de activar
-    addMessage(text, 'user');
-    queryJarvis(text);
+
+    // ACTIVE: procesa cualquier frase
+    if (voiceMode === 'active') {
+      if (isWake) {
+        // Si dice jarvis de nuevo, ignorar (ya estamos activos)
+        return;
+      }
+      clearTimeout(silenceTimer);
+      addMessage(text, 'user');
+      queryJarvis(text);
+    }
   };
 
   recognition.onerror = (e) => {
@@ -257,15 +279,34 @@ function setupRecognition() {
   };
 
   recognition.onend = () => {
-    // Re-arrancar automáticamente
     if (micActive) {
       try { recognition.start(); } catch(_) {
         micActive = false;
-        micBtn.className = '';
+        voiceMode = 'idle';
+        updateMicUI();
         statusEl.textContent = 'Micrófono pausado. Cliquea 🎤';
       }
     }
   };
+}
+
+function updateMicUI() {
+  micBtn.className = voiceMode === 'active' ? 'active' : (voiceMode === 'processing' ? 'thinking' : '');
+  statusDot.className = voiceMode === 'idle' ? 'dot off' : 'dot';
+  if (voiceMode === 'idle') {
+    statusEl.textContent = 'Di "Hey Jarvis"...';
+  } else if (voiceMode === 'active') {
+    statusEl.textContent = 'Escuchando...';
+  }
+}
+
+function startSilenceTimer() {
+  clearTimeout(silenceTimer);
+  silenceTimer = setTimeout(() => {
+    voiceMode = 'idle';
+    updateMicUI();
+    statusEl.textContent = 'Di "Hey Jarvis"...';
+  }, SILENCE_TIMEOUT);
 }
 
 function toggleMic() {
@@ -273,15 +314,18 @@ function toggleMic() {
 
   if (micActive) {
     micActive = false;
+    voiceMode = 'idle';
+    clearTimeout(silenceTimer);
     try { recognition.stop(); } catch(_) {}
-    micBtn.className = '';
+    updateMicUI();
     statusEl.textContent = 'Micrófono pausado';
   } else {
     micActive = true;
+    voiceMode = 'idle';
     recognition.start();
-    micBtn.classList.add('active');
-    statusEl.textContent = 'Escuchando... Di "Jarvis"...';
-    statusDot.className = 'dot';
+    updateMicUI();
+    statusEl.textContent = 'Di "Hey Jarvis"...';
+    statusDot.className = 'dot off';
   }
 }
 
