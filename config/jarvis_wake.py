@@ -133,10 +133,13 @@ def audio_callback(indata, frames, time_info, status):
 
 def process_audio():
     global is_recording, recording_frames
-    last_debug = time.time()
 
     while True:
         frame = audio_queue.get()
+        # Normalizar audio bajo (microfono con poco gain)
+        peak = np.max(np.abs(frame))
+        if peak > 0.001:
+            frame = frame / peak
         audio_16k = (frame[:, 0] * 32767).astype(np.int16)
 
         if is_recording:
@@ -146,11 +149,6 @@ def process_audio():
         # Wake word detection
         prediction = model.predict(audio_16k)
         score = prediction.get("hey_jarvis", 0)
-
-        # Debug cada 3 segundos
-        if time.time() - last_debug > 3:
-            print(f"   [mic activo, score max: {score:.3f}]", flush=True)
-            last_debug = time.time()
 
         if score >= WAKE_THRESHOLD:
             print(f"\n   Jarvis activado! (score: {score:.2f})", flush=True)
@@ -178,8 +176,13 @@ def process_audio():
 
             is_recording = False
 
-            # WAV
-            audio_np = np.array(recording_frames, dtype=np.int16)
+            # WAV (normalizar volumen bajo)
+            audio_np = np.array(recording_frames, dtype=np.int16).astype(np.float32)
+            peak = np.max(np.abs(audio_np))
+            if peak > 1:
+                audio_np = (audio_np / peak * 32767).astype(np.int16)
+            else:
+                audio_np = audio_np.astype(np.int16)
             wav_buf = io.BytesIO()
             with wave.open(wav_buf, "wb") as wf:
                 wf.setnchannels(1)
