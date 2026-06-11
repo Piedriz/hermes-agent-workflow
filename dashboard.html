@@ -107,30 +107,22 @@ let isProcessing = false;
 
 // === Crear sesión persistente (reusa si ya existe) ===
 async function initSession() {
-  // Siempre crear sesion nueva (evita prompts viejos de localStorage)
+  // Tools server maneja sesion internamente. Solo verificamos conectividad.
   try {
-    const resp = await fetch(API_BASE + '/api/sessions', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + API_KEY },
-      body: JSON.stringify({ model: MODEL, system_prompt: SYSTEM_PROMPT }),
-    });
+    const resp = await fetch(TOOLS_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{"message":"ping"}' });
     if (resp.ok) {
-      const data = await resp.json();
-      sessionId = data.session?.id || data.id;
-      localStorage.setItem('jarvis_session_id', sessionId);
-      sessionLabel.textContent = 'sesión: ' + sessionId.slice(-8);
       statusDot.className = 'dot';
       statusEl.textContent = 'Cliquea 🎤 para empezar';
+      sessionLabel.textContent = 'conectado';
     }
   } catch(e) {
-    console.error('No se pudo crear sesión:', e);
-    statusEl.textContent = 'Error de conexión con Jarvis';
+    statusDot.className = 'dot off';
+    statusEl.textContent = 'Tools server no disponible';
   }
 }
 
 // === Chat con sesión persistente ===
 async function queryJarvis(text) {
-  if (!sessionId) { addMessage('Jarvis no está conectado.', 'status'); return; }
   isProcessing = true;
   statusEl.textContent = 'Pensando...';
   statusDot.className = 'dot off';

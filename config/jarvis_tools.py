@@ -18,7 +18,27 @@ HERMES_BIN = os.path.join(
     "hermes", "hermes-agent", "venv", "Scripts", "hermes.exe"
 )
 
-SESSION_ID = None  # primera llamada crea sesion, luego se reusa
+SESSION_FILE = os.path.join(HERMES_HOME, ".jarvis_session_id")
+SESSION_ID = None
+
+
+def load_session():
+    """Carga el ID de sesion guardado en disco."""
+    global SESSION_ID
+    if os.path.exists(SESSION_FILE):
+        with open(SESSION_FILE) as f:
+            sid = f.read().strip()
+            if sid and len(sid) > 10:
+                SESSION_ID = sid
+                return
+
+
+def save_session(sid):
+    """Guarda el ID de sesion en disco (persiste entre reinicios)."""
+    global SESSION_ID
+    SESSION_ID = sid
+    with open(SESSION_FILE, "w") as f:
+        f.write(sid)
 
 
 def query_jarvis(text: str) -> str:
@@ -36,12 +56,12 @@ def query_jarvis(text: str) -> str:
         )
         output = r.stdout
 
-        # Capturar session ID para reusar
+        # Capturar session ID para reusar (viene en el output "hermes --resume XXX")
         for line in output.split('\n'):
             if '--resume' in line:
                 sid = line.split('--resume')[-1].strip()
                 if sid and len(sid) > 10:
-                    SESSION_ID = sid
+                    save_session(sid)
                     break
 
         # Extraer respuesta (texto despues de Query:, antes de metadatos)
@@ -97,9 +117,10 @@ class Handler(BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
+    load_session()
     port = int(os.environ.get("TOOLS_PORT", "8646"))
     server = HTTPServer(("0.0.0.0", port), Handler)
-    print(f"Jarvis Tools en :{port} (hermes chat -q + sesion persistente)")
+    print(f"Jarvis Tools en :{port} | sesion: {SESSION_ID or '(nueva)'}")
     try:
         server.serve_forever()
     except KeyboardInterrupt:
