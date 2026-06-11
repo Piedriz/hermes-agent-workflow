@@ -107,13 +107,13 @@ let isProcessing = false;
 
 // === Crear sesión persistente (reusa si ya existe) ===
 async function initSession() {
-  // Tools server maneja sesion internamente. Solo verificamos conectividad.
   try {
-    const resp = await fetch(TOOLS_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{"message":"ping"}' });
+    const resp = await fetch(TOOLS_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{"action":"ping"}' });
     if (resp.ok) {
+      const data = await resp.json();
       statusDot.className = 'dot';
       statusEl.textContent = 'Cliquea 🎤 para empezar';
-      sessionLabel.textContent = 'conectado';
+      sessionLabel.textContent = data.session ? 'sesion: ' + data.session.slice(-8) : 'conectado';
     }
   } catch(e) {
     statusDot.className = 'dot off';

@@ -68,12 +68,11 @@ def query_jarvis(text: str) -> str:
         lines = output.split('\n')
         result_lines = []
         for line in lines:
-            if 'Query:' in line or 'Initializing' in line:
+            # Saltar metadata y tool calls
+            if any(x in line for x in ['Query:', 'Initializing', 'Resume this session', 'Session:', 'Duration:', 'Messages:', 'Resumed session', '┊']):
                 continue
-            if 'Resume this session' in line or 'Session:' in line or 'Duration:' in line or 'Messages:' in line:
-                break
             clean = re.sub(r'\x1b\[[0-9;]*m', '', line).strip()
-            clean = clean.strip('\u2500\u2550\u2502\u2551\u256d\u256e\u256f\u2570\u250c\u2510\u2514\u2518 ╭╮╰╯│─┌┐└┘⚕')
+            clean = clean.strip('\u2500\u2550\u2502\u2551\u256d\u256e\u256f\u2570\u250c\u2510\u2514\u2518 ╭╮╰╯│─┌┐└┘⚕↻🐍💻📚🔎📖')
             if clean and len(clean) > 2 and 'Hermes' not in clean:
                 result_lines.append(clean)
         result = ' '.join(result_lines).strip()
@@ -92,6 +91,15 @@ class Handler(BaseHTTPRequestHandler):
             payload = json.loads(body)
         except:
             self.send_error(400); return
+
+        # Endpoint rapido de conectividad (sin LLM)
+        if payload.get("action") == "ping":
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.end_headers()
+            self.wfile.write(json.dumps({"status": "ok", "session": SESSION_ID or "pending"}).encode())
+            return
 
         text = payload.get("message", "")
         if not text:
