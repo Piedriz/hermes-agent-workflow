@@ -166,83 +166,70 @@ Should print `AUTHENTICATED`. Setup is complete — token refreshes automaticall
 
 ## Usage
 
-Usa `execute_code` (herramienta nativa de Hermes) para todas las operaciones.
-El token OAuth ya está en `google_token.json`. La API se llama via subprocess
-al Python del entorno.
-
-Define este helper al inicio de cada bloque execute_code:
+Usa `execute_code`. Copia y pega este bloque exacto (cambiando solo el comando final):
 
 ```python
 import subprocess, os, json
 os.chdir(os.environ.get('HERMES_HOME', '.'))
-PY = subprocess.check_output(['where', 'python']).decode().strip().split('\n')[0] if os.name == 'nt' else 'python3'
-GAPI = 'skills/productivity/google-workspace/scripts/google_api.py'
-def gapi(*args):
-    r = subprocess.run([PY, GAPI] + list(args), capture_output=True, text=True,
-                       env={**os.environ, 'PYTHONIOENCODING': 'utf-8'})
-    if r.returncode != 0:
-        print('ERROR:', r.stderr[:500])
-        return None
-    return json.loads(r.stdout)
+PY = r'C:\Users\DELL\AppData\Local\hermes\hermes-agent\venv\Scripts\python.exe'
+API = 'skills/productivity/google-workspace/scripts/google_api.py'
+r = subprocess.run([PY, API, 'gmail', 'search', 'is:unread', '--max', '10'],
+    capture_output=True, text=True, env={**os.environ, 'PYTHONIOENCODING': 'utf-8'})
+print(r.stdout[:3000] if r.returncode == 0 else 'ERROR: '+r.stderr[:500])
 ```
+
+Cambia los argumentos `'gmail', 'search', 'is:unread', '--max', '10'` según necesites.
 
 ### Gmail
 
 ```python
-# Search (returns list of dicts with id, from, subject, date, snippet)
-result = gapi('gmail', 'search', 'is:unread', '--max', '10')
-if result:
-    for email in result:
-        print(f"De: {email['from']} | {email['subject']}")
+# Buscar correos
+[PY, API, 'gmail', 'search', 'is:unread', '--max', '10']
 
-# Read full message
-result = gapi('gmail', 'get', 'MESSAGE_ID')
+# Leer un correo
+[PY, API, 'gmail', 'get', 'MESSAGE_ID']
 
-# Send
-gapi('gmail', 'send', '--to', 'user@example.com', '--subject', 'Hello', '--body', 'Message')
+# Enviar
+[PY, API, 'gmail', 'send', '--to', 'email@ejemplo.com', '--subject', 'Asunto', '--body', 'Mensaje']
 
-# Reply (auto-threads)
-gapi('gmail', 'reply', 'MESSAGE_ID', '--body', 'Thanks!')
+# Responder
+[PY, API, 'gmail', 'reply', 'MESSAGE_ID', '--body', 'Respuesta']
 ```
 
 ### Calendar
 
 ```python
-# List events (next 7 days default)
-result = gapi('calendar', 'list')
-result = gapi('calendar', 'list', '--start', '2026-03-01T00:00:00Z', '--end', '2026-03-07T23:59:59Z')
-
-# Create event
-gapi('calendar', 'create', '--summary', 'Team Standup', '--start', '2026-03-01T10:00:00-06:00', '--end', '2026-03-01T10:30:00-06:00')
-gapi('calendar', 'create', '--summary', 'Lunch', '--start', '2026-03-01T12:00:00Z', '--end', '2026-03-01T13:00:00Z', '--location', 'Cafe')
-
-# Delete event
-gapi('calendar', 'delete', 'EVENT_ID')
+[PY, API, 'calendar', 'list']
+[PY, API, 'calendar', 'create', '--summary', 'Reunión', '--start', '2026-06-11T10:00:00-05:00', '--end', '2026-06-11T11:00:00-05:00']
+[PY, API, 'calendar', 'delete', 'EVENT_ID']
 ```
 
 ### Drive
 
 ```python
-# Search files
-result = gapi('drive', 'search', 'quarterly report', '--max', '10')
+[PY, API, 'drive', 'search', 'término', '--max', '10']
+[PY, API, 'drive', 'get', 'FILE_ID']
+[PY, API, 'drive', 'download', 'FILE_ID']
+```
 
-# Get metadata
-result = gapi('drive', 'get', 'FILE_ID')
+```python
+# Buscar archivos
+[PY, API, 'drive', 'search', 'reporte', '--max', '10']
 
-# Download
-result = gapi('drive', 'download', 'FILE_ID')
+# Descargar
+[PY, API, 'drive', 'download', 'FILE_ID']
 
-# Upload
-gapi('drive', 'upload', '/path/to/report.pdf')
+# Subir
+[PY, API, 'drive', 'upload', '/ruta/archivo.pdf']
 
-# Create folder
-gapi('drive', 'create-folder', 'Reports')
+# Crear carpeta
+[PY, API, 'drive', 'create-folder', 'Reportes']
 
-# Share
-gapi('drive', 'share', 'FILE_ID', '--email', 'alice@example.com', '--role', 'reader')
+# Compartir
+[PY, API, 'drive', 'share', 'FILE_ID', '--email', 'alice@ejemplo.com', '--role', 'reader']
 
-# Delete (trash by default, reversible)
-gapi('drive', 'delete', 'FILE_ID')
+# Eliminar (papelera, reversible)
+[PY, API, 'drive', 'delete', 'FILE_ID']
 ```
 
 ### Contacts
