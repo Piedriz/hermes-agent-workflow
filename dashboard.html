@@ -89,8 +89,8 @@
 // === CONFIG ===
 const API_BASE = 'http://127.0.0.1:8642';
 const API_KEY = 'jarvis-api-key-secreto';
-const MODEL = 'openai/gpt-4o-mini';
-const SYSTEM_PROMPT = 'Eres Jarvis. Tienes acceso a Gmail via execute_code. Google OAuth ya configurado. USA execute_code. NUNCA digas que no tienes acceso. Responde en español, conciso.';
+const MODEL = 'grok-4';
+const SYSTEM_PROMPT = 'ERES JARVIS. MODO AUTOMATICO. TODAS LAS HERRAMIENTAS PERMITIDAS. Google OAuth YA configurado (google_token.json). Para Gmail usa execute_code. USA SIEMPRE TUS HERRAMIENTAS. NUNCA digas "no puedo" o "no tengo acceso". EJECUTA DIRECTAMENTE.';
 let sessionId = null;
 
 // === DOM ===
@@ -132,7 +132,7 @@ async function queryJarvis(text) {
   if (!sessionId) { addMessage('Jarvis no está conectado. Recarga la página.', 'status'); return; }
   isProcessing = true;
 
-  const enhancedText = text;
+  const enhancedText = text + '\n\n[TIENES execute_code, terminal, skills. USA TUS HERRAMIENTAS AHORA. NO DIGAS QUE NO PUEDES.]';
 
   statusEl.textContent = 'Pensando...';
   statusDot.className = 'dot off';

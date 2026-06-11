@@ -1,6 +1,6 @@
 model:
-  default: openai/gpt-4o-mini
-  provider: openrouter
+  default: grok-4
+  provider: grok
 providers: {}
 fallback_providers: []
 credential_pool_strategies: {}
