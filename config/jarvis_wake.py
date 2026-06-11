@@ -53,7 +53,7 @@ CHUNK_SIZE = 1280  # 80ms at 16kHz
 SILENCE_THRESHOLD = 0.02
 SILENCE_SECONDS = 1.5
 MAX_RECORD_SECS = 10
-WAKE_THRESHOLD = 0.5
+WAKE_THRESHOLD = 0.3  # mas sensible
 
 model = None
 audio_queue = queue.Queue()
@@ -133,6 +133,7 @@ def audio_callback(indata, frames, time_info, status):
 
 def process_audio():
     global is_recording, recording_frames
+    last_debug = time.time()
 
     while True:
         frame = audio_queue.get()
@@ -145,6 +146,11 @@ def process_audio():
         # Wake word detection
         prediction = model.predict(audio_16k)
         score = prediction.get("hey_jarvis", 0)
+
+        # Debug cada 3 segundos
+        if time.time() - last_debug > 3:
+            print(f"   [mic activo, score max: {score:.3f}]", flush=True)
+            last_debug = time.time()
 
         if score >= WAKE_THRESHOLD:
             print(f"\n   Jarvis activado! (score: {score:.2f})", flush=True)
@@ -201,7 +207,7 @@ def main():
     import openwakeword
     openwakeword.utils.download_models()
 
-    model = Model(wakeword_models=["hey_jarvis"])
+    model = Model(wakeword_models=["hey_jarvis"], vad_threshold=0)
 
     print("=" * 50)
     print("  Jarvis Wake — di 'Hey Jarvis' para activar")
