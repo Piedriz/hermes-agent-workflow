@@ -17,9 +17,98 @@ HERMES_BIN = os.path.join(
     os.environ.get("LOCALAPPDATA", os.path.expanduser("~")),
     "hermes", "hermes-agent", "venv", "Scripts", "hermes.exe"
 )
+VENV_PYTHON = os.path.join(
+    os.environ.get("LOCALAPPDATA", os.path.expanduser("~")),
+    "hermes", "hermes-agent", "venv", "Scripts", "python.exe"
+)
+SETUP_SCRIPT = os.path.join(HERMES_HOME, "skills", "productivity", "google-workspace", "scripts", "setup.py")
+TOKEN_FILE = os.path.join(HERMES_HOME, "google_token.json")
 
 SESSION_FILE = os.path.join(HERMES_HOME, ".jarvis_session_id")
 SESSION_ID = None
+
+
+def google_account() -> dict:
+    """Verifica autenticacion y extrae email."""
+    if not os.path.exists(TOKEN_FILE):
+        return {"email": None, "authenticated": False}
+
+    try:
+        r = subprocess.run(
+            [VENV_PYTHON, os.path.join(HERMES_HOME, "skills", "productivity", "google-workspace", "scripts", "google_api.py"),
+             "gmail", "search", "is:unread", "--max", "1"],
+            capture_output=True, text=True, timeout=20,
+            env={**os.environ, "PYTHONIOENCODING": "utf-8", "HERMES_HOME": HERMES_HOME},
+            cwd=HERMES_HOME,
+        )
+        if r.returncode != 0 or "error" in r.stdout.lower()[:100]:
+            return {"email": None, "authenticated": False}
+
+        # Extraer email de los resultados
+        data = json.loads(r.stdout)
+        if isinstance(data, list) and len(data) > 0:
+            email_raw = data[0].get("to", "")
+            # Limpiar formato "Name <email>"
+            if "<" in email_raw:
+                email = email_raw.split("<")[1].split(">")[0].strip()
+            else:
+                email = email_raw.strip()
+            return {"email": email, "authenticated": True}
+
+        # Si no hay correos, autenticado igual
+        return {"email": "Gmail OK", "authenticated": True}
+
+    except Exception as e:
+        # Si el token existe pero la API falla, asumir no autenticado
+        return {"email": None, "authenticated": False, "error": str(e)[:100]}
+
+
+def google_logout() -> dict:
+    """Revoca acceso Google y borra token."""
+    try:
+        r = subprocess.run(
+            [VENV_PYTHON, SETUP_SCRIPT, "--revoke"],
+            capture_output=True, text=True, timeout=30,
+            env={**os.environ, "PYTHONIOENCODING": "utf-8", "HERMES_HOME": HERMES_HOME},
+            cwd=HERMES_HOME,
+        )
+        return {"status": "ok", "output": r.stdout.strip()}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+def google_auth_url() -> dict:
+    """Genera URL de autorizacion Google OAuth."""
+    try:
+        r = subprocess.run(
+            [VENV_PYTHON, SETUP_SCRIPT, "--auth-url"],
+            capture_output=True, text=True, timeout=30,
+            env={**os.environ, "PYTHONIOENCODING": "utf-8", "HERMES_HOME": HERMES_HOME},
+            cwd=HERMES_HOME,
+        )
+        url = r.stdout.strip()
+        if url.startswith("http"):
+            return {"url": url}
+        return {"error": r.stdout.strip()}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+def google_auth_code(code: str) -> dict:
+    """Intercambia codigo OAuth por token."""
+    try:
+        r = subprocess.run(
+            [VENV_PYTHON, SETUP_SCRIPT, "--auth-code", code],
+            capture_output=True, text=True, timeout=60,
+            env={**os.environ, "PYTHONIOENCODING": "utf-8", "HERMES_HOME": HERMES_HOME},
+            cwd=HERMES_HOME,
+        )
+        output = r.stdout.strip()
+        if "OK" in output or "Authenticated" in output:
+            return google_account()
+        return {"error": output}
+    except Exception as e:
+        return {"error": str(e)}
 
 
 def load_session():
@@ -103,17 +192,27 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.write(json.dumps({"status": "ok", "session": SESSION_ID or "pending"}).encode())
             return
 
-        text = payload.get("message", "")
-        if not text:
-            self.send_error(400, "missing message"); return
-
-        reply = query_jarvis(text)
+        # Google Account endpoints
+        if payload.get("action") == "account":
+            result = google_account()
+        elif payload.get("action") == "gmail_logout":
+            result = google_logout()
+        elif payload.get("action") == "gmail_auth":
+            result = google_auth_url()
+        elif payload.get("action") == "gmail_code":
+            result = google_auth_code(payload.get("code", ""))
+        else:
+            # Chat normal via Hermes
+            text = payload.get("message", "")
+            if not text:
+                self.send_error(400, "missing message"); return
+            result = {"reply": query_jarvis(text), "session": SESSION_ID}
 
         self.send_response(200)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Access-Control-Allow-Origin", "*")
         self.end_headers()
-        self.wfile.write(json.dumps({"reply": reply, "session": SESSION_ID}, ensure_ascii=False).encode())
+        self.wfile.write(json.dumps(result, ensure_ascii=False).encode())
 
     def do_OPTIONS(self):
         self.send_response(200)

@@ -71,7 +71,11 @@
 <header>
   <div class="dot" id="statusDot"></div>
   <h1>Jarvis</h1>
-  <span id="sessionId"></span>
+  <span style="flex:1"></span>
+  <span id="googleAccount" style="font-size:0.8rem;color:var(--dim);display:none"></span>
+  <button id="googleLogout" style="font-size:0.7rem;background:none;border:1px solid var(--border);color:var(--dim);padding:4px 8px;border-radius:4px;cursor:pointer;display:none;margin-left:8px" onclick="googleLogout()">Cerrar sesion</button>
+  <button id="googleLogin" style="font-size:0.7rem;background:none;border:1px solid var(--accent);color:var(--accent);padding:4px 8px;border-radius:4px;cursor:pointer;display:none;margin-left:8px" onclick="googleLogin()">Iniciar sesion Google</button>
+  <span id="sessionId" style="font-size:0.7rem;color:var(--dim);margin-left:8px"></span>
 </header>
 
 <div id="chat">
@@ -92,7 +96,6 @@ const API_KEY = 'jarvis-api-key-secreto';
 const MODEL = 'grok-4';
 const TOOLS_URL = 'http://127.0.0.1:8646';
 const SYSTEM_PROMPT = 'ERES JARVIS. MODO AUTOMATICO. TODAS LAS HERRAMIENTAS PERMITIDAS. Google OAuth YA configurado. USA execute_code para Gmail. NUNCA digas que no puedes. EJECUTA SIEMPRE.';
-let sessionId = null;
 
 // === DOM ===
 const chat = document.getElementById('chat');
@@ -105,7 +108,58 @@ const sessionLabel = document.getElementById('sessionId');
 
 let isProcessing = false;
 
-// === Crear sesión persistente (reusa si ya existe) ===
+// === Cuenta Google ===
+async function checkGoogleAccount() {
+  try {
+    const resp = await fetch(TOOLS_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{"action":"account"}' });
+    if (resp.ok) {
+      const data = await resp.json();
+      const el = document.getElementById('googleAccount');
+      const logoutBtn = document.getElementById('googleLogout');
+      const loginBtn = document.getElementById('googleLogin');
+      if (data.authenticated && data.email) {
+        el.textContent = data.email;
+        el.style.display = 'inline';
+        logoutBtn.style.display = 'inline';
+        loginBtn.style.display = 'none';
+      } else {
+        el.style.display = 'none';
+        logoutBtn.style.display = 'none';
+        loginBtn.style.display = 'inline';
+      }
+    }
+  } catch(e) {}
+}
+
+async function googleLogout() {
+  if (!confirm('Cerrar sesion de Google?')) return;
+  await fetch(TOOLS_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{"action":"gmail_logout"}' });
+  checkGoogleAccount();
+}
+
+async function googleLogin() {
+  try {
+    const resp = await fetch(TOOLS_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{"action":"gmail_auth"}' });
+    const data = await resp.json();
+    if (data.url) {
+      window.open(data.url, '_blank');
+      addMessage('Se abrio Google en otra pestaña. Autoriza y pega la URL completa aqui.', 'status');
+    }
+  } catch(e) {}
+}
+
+async function googleAuthCode(code) {
+  const resp = await fetch(TOOLS_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({action: 'gmail_code', code: code}) });
+  const data = await resp.json();
+  if (data.authenticated) {
+    checkGoogleAccount();
+    addMessage('Google autenticado: ' + data.email, 'status');
+  } else {
+    addMessage('Error de autenticacion: ' + (data.error || 'desconocido'), 'status');
+  }
+}
+
+// === Crear sesión persistente ===
 async function initSession() {
   try {
     const resp = await fetch(TOOLS_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{"action":"ping"}' });
@@ -119,6 +173,7 @@ async function initSession() {
     statusDot.className = 'dot off';
     statusEl.textContent = 'Tools server no disponible';
   }
+  checkGoogleAccount();
 }
 
 // === Chat con sesión persistente ===
@@ -251,6 +306,14 @@ function addMessage(text, role) {
 sendBtn.addEventListener('click', () => {
   const text = inputText.value.trim();
   if (!text) return;
+
+  // Detectar URL de OAuth (el usuario pega la URL de redireccion)
+  if (text.includes('code=') && text.includes('localhost:1')) {
+    googleAuthCode(text);
+    inputText.value = '';
+    return;
+  }
+
   addMessage(text, 'user');
   inputText.value = '';
   queryJarvis(text);
