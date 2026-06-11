@@ -1,34 +1,35 @@
 """
-jarvis_wake.py — Wake word "Jarvis" con Porcupine.
+jarvis_wake.py — Wake word "Hey Jarvis" con OpenWakeWord (GRATIS).
 
-Escucha continuamente. Al detectar "Jarvis":
+Escucha continuamente. Al detectar "Hey Jarvis":
   1. Graba audio hasta silencio
   2. Transcribe con OpenAI Whisper
-  3. Envia texto a Hermes (misma sesion)
-  4. Responde con TTS (Edge gratuito o OpenAI)
+  3. Envia texto a Hermes (sesion persistente)
+  4. Responde con TTS (Edge gratuito)
 
 Ejecutar: python scripts/jarvis_wake.py
 """
 
-import os, sys, json, time, queue, tempfile, threading, subprocess
+import os, sys, json, time, io, queue, wave, struct, threading, subprocess
 
 import numpy as np
 import sounddevice as sd
-import pvporcupine
-
-from urllib.request import Request, urlopen
-from urllib.error import HTTPError
+from openwakeword.model import Model
 
 # === CONFIG ===
-HERMES_HOME = os.environ.get("HERMES_HOME", os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+HERMES_HOME = os.environ.get(
+    "HERMES_HOME",
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."),
+)
 HERMES_BIN = os.path.join(
     os.environ.get("LOCALAPPDATA", os.path.expanduser("~")),
-    "hermes", "hermes-agent", "venv", "Scripts", "hermes.exe"
+    "hermes", "hermes-agent", "venv", "Scripts", "hermes.exe",
 )
 
-OPENAI_KEY = None
+OPENAI_KEY = ""
+
 def _load_keys():
-    global OPENAI_KEY, PICOVOICE_KEY
+    global OPENAI_KEY
     env_file = os.path.join(HERMES_HOME, ".env")
     try:
         with open(env_file) as f:
@@ -38,31 +39,31 @@ def _load_keys():
                     OPENAI_KEY = line.split("=", 1)[1].strip().strip("\"'")
                 elif line.startswith("OPENAI_API_KEY=") and not OPENAI_KEY:
                     OPENAI_KEY = line.split("=", 1)[1].strip().strip("\"'")
-                elif line.startswith("PICOVOICE_ACCESS_KEY="):
-                    PICOVOICE_KEY = line.split("=", 1)[1].strip().strip("\"'")
     except FileNotFoundError:
         pass
-    OPENAI_KEY = OPENAI_KEY or os.environ.get("VOICE_TOOLS_OPENAI_KEY") or os.environ.get("OPENAI_API_KEY") or ""
-    PICOVOICE_KEY = PICOVOICE_KEY or os.environ.get("PICOVOICE_ACCESS_KEY") or ""
-
-PICOVOICE_KEY = ""
+    OPENAI_KEY = (
+        OPENAI_KEY
+        or os.environ.get("VOICE_TOOLS_OPENAI_KEY")
+        or os.environ.get("OPENAI_API_KEY")
+        or ""
+    )
 
 SAMPLE_RATE = 16000
+CHUNK_SIZE = 1280  # 80ms at 16kHz
 SILENCE_THRESHOLD = 0.02
-SILENCE_DURATION = 1.5
-MAX_RECORD_SECONDS = 10
+SILENCE_SECONDS = 1.5
+MAX_RECORD_SECS = 10
+WAKE_THRESHOLD = 0.5
 
-porcupine = None
+model = None
 audio_queue = queue.Queue()
 is_recording = False
 recording_frames = []
 
 
-def transcribe(audio_data: bytes) -> str:
-    """Envia audio a OpenAI Whisper y devuelve texto."""
+def transcribe(audio_wav: bytes) -> str:
     if not OPENAI_KEY:
-        return "ERROR: no API key"
-
+        return "ERROR: sin API key"
     boundary = "----WhisperBoundary"
     body = (
         f"--{boundary}\r\n"
@@ -71,62 +72,55 @@ def transcribe(audio_data: bytes) -> str:
         'Content-Disposition: form-data; name="language"\r\n\r\nes\r\n'
         f"--{boundary}\r\n"
         'Content-Disposition: form-data; name="file"; filename="audio.wav"\r\n'
-        'Content-Type: audio/wav\r\n\r\n'
-    ).encode() + audio_data + f"\r\n--{boundary}--\r\n".encode()
+        "Content-Type: audio/wav\r\n\r\n"
+    ).encode() + audio_wav + f"\r\n--{boundary}--\r\n".encode()
 
+    from urllib.request import Request, urlopen
     req = Request("https://api.openai.com/v1/audio/transcriptions", data=body)
     req.add_header("Authorization", f"Bearer {OPENAI_KEY}")
     req.add_header("Content-Type", f"multipart/form-data; boundary={boundary}")
-
     try:
         with urlopen(req, timeout=30) as resp:
-            result = json.loads(resp.read())
-            return result.get("text", "").strip()
+            return json.loads(resp.read()).get("text", "").strip()
     except Exception as e:
         return f"ERROR: {e}"
 
 
 def speak(text: str):
-    """TTS via Edge (gratuito, usa el sistema)."""
+    """TTS via Windows SAPI (gratuito, offline)."""
     try:
-        import subprocess
-        # Guardar texto en temp y usar edge-tts o powershell
-        cmd = (
-            'Add-Type -AssemblyName System.Speech; '
-            f'$s = New-Object System.Speech.Synthesis.SpeechSynthesizer; '
-            f'$s.Speak(\'{text.replace(chr(39), chr(39)+chr(39))}\')'
+        safe = text.replace("'", "''")
+        subprocess.run(
+            [
+                "powershell", "-Command",
+                "Add-Type -AssemblyName System.Speech; "
+                f"$s = New-Object System.Speech.Synthesis.SpeechSynthesizer; "
+                f"$s.Speak('{safe}')",
+            ],
+            capture_output=True, timeout=30,
         )
-        subprocess.run(["powershell", "-Command", cmd],
-                       capture_output=True, timeout=30)
     except Exception:
         pass
 
 
 def query_hermes(text: str) -> str:
-    """Envia texto a Hermes y devuelve respuesta."""
     try:
-        result = subprocess.run(
+        r = subprocess.run(
             [HERMES_BIN, "chat", "-q", text, "--max-turns", "5", "--continue", "jarvis-voice"],
             capture_output=True, text=True, timeout=120,
-            env={**os.environ, "HERMES_HOME": HERMES_HOME,
-                 "PYTHONIOENCODING": "utf-8"},
+            env={**os.environ, "HERMES_HOME": HERMES_HOME, "PYTHONIOENCODING": "utf-8"},
             cwd=HERMES_HOME,
         )
-        # Extraer solo la respuesta del output
-        output = result.stdout
-        # Buscar contenido entre las lineas del banner
-        lines = output.split('\n')
-        response_lines = []
-        in_response = False
+        lines = r.stdout.split("\n")
+        resp = []
         for line in lines:
-            # Skip ANSI and metadata
             clean = line.strip()
-            if not clean or clean.startswith('\x1b') or '─' in clean:
+            if not clean or "\x1b" in clean or "─" in clean:
                 continue
-            if clean.startswith('Resume this session') or 'Session:' in clean:
+            if "Resume this session" in clean or "Session:" in clean:
                 break
-            response_lines.append(clean)
-        return ' '.join(response_lines).strip() or "(sin respuesta)"
+            resp.append(clean)
+        return " ".join(resp).strip() or "(sin respuesta)"
     except subprocess.TimeoutExpired:
         return "(timeout)"
     except Exception as e:
@@ -134,12 +128,10 @@ def query_hermes(text: str) -> str:
 
 
 def audio_callback(indata, frames, time_info, status):
-    """Callback de sounddevice: recibe audio del microfono."""
     audio_queue.put(indata.copy())
 
 
 def process_audio():
-    """Thread: procesa audio en busca de wake word y graba."""
     global is_recording, recording_frames
 
     while True:
@@ -150,59 +142,52 @@ def process_audio():
             recording_frames.extend(audio_16k.tolist())
             continue
 
-        pcm = audio_16k.tolist()
-        keyword_index = porcupine.process(pcm)
-        if keyword_index == 0:  # jarvis
-            print("\n🎙️  ¡Jarvis activado! Habla...", flush=True)
-            is_recording = True
-            recording_frames = []
+        # Wake word detection
+        prediction = model.predict(audio_16k.tolist())
+        score = prediction.get("hey_jarvis", 0)
 
-            # Grabar hasta silencio o maximo
+        if score >= WAKE_THRESHOLD:
+            print(f"\n   Jarvis activado! (score: {score:.2f})", flush=True)
+            is_recording = True
+            recording_frames = list(audio_16k.tolist())
+
             silence_start = None
             while True:
                 frame = audio_queue.get()
                 samples = (frame[:, 0] * 32767).astype(np.int16)
                 recording_frames.extend(samples.tolist())
-
                 volume = np.abs(frame).mean()
                 now = time.time()
 
                 if volume < SILENCE_THRESHOLD:
                     if silence_start is None:
                         silence_start = now
-                    elif now - silence_start > SILENCE_DURATION:
+                    elif now - silence_start > SILENCE_SECONDS:
                         break
                 else:
                     silence_start = None
 
-                if len(recording_frames) / SAMPLE_RATE > MAX_RECORD_SECONDS:
+                if len(recording_frames) / SAMPLE_RATE > MAX_RECORD_SECS:
                     break
 
             is_recording = False
-            print("   Procesando...", flush=True)
 
-            # Convertir a WAV
+            # WAV
             audio_np = np.array(recording_frames, dtype=np.int16)
-            import io, struct, wave
             wav_buf = io.BytesIO()
-            with wave.open(wav_buf, 'wb') as wf:
+            with wave.open(wav_buf, "wb") as wf:
                 wf.setnchannels(1)
                 wf.setsampwidth(2)
                 wf.setframerate(SAMPLE_RATE)
                 wf.writeframes(audio_np.tobytes())
-            wav_bytes = wav_buf.getvalue()
 
-            # STT
-            text = transcribe(wav_bytes)
-            print(f"   Tú: {text}", flush=True)
+            text = transcribe(wav_buf.getvalue())
+            print(f"   Tu: {text}", flush=True)
 
             if text and not text.startswith("ERROR"):
-                # Hermes
                 print("   Jarvis pensando...", flush=True)
                 response = query_hermes(text)
                 print(f"   Jarvis: {response}", flush=True)
-
-                # TTS
                 if response and response != "(sin respuesta)":
                     threading.Thread(target=speak, args=(response,), daemon=True).start()
 
@@ -210,51 +195,37 @@ def process_audio():
 
 
 def main():
-    global porcupine
+    global model
     _load_keys()
 
-    if not PICOVOICE_KEY:
-        print("ERROR: PICOVOICE_ACCESS_KEY no configurado en .env")
-        print("Obten uno gratis en https://console.picovoice.ai/")
-        sys.exit(1)
+    import openwakeword
+    openwakeword.utils.download_models()
 
-    porcupine = pvporcupine.create(
-        access_key=PICOVOICE_KEY,
-        keywords=["jarvis"],
-    )
+    model = Model(wakeword_models=["hey_jarvis"])
 
     print("=" * 50)
-    print("  Jarvis Wake — di 'Jarvis' para activar")
+    print("  Jarvis Wake — di 'Hey Jarvis' para activar")
+    print("  OpenWakeWord (gratis, sin API key)")
     print("  Ctrl+C para salir")
     print("=" * 50)
 
-    # Verificar microfono
     devices = sd.query_devices()
-    input_devices = [d for d in devices if d['max_input_channels'] > 0]
-    if not input_devices:
-        print("ERROR: No se encontro microfono")
+    inputs = [d for d in devices if d["max_input_channels"] > 0]
+    if not inputs:
+        print("ERROR: No hay microfono")
         sys.exit(1)
-    print(f"  Microfono: {input_devices[0]['name']}")
+    print(f"  Micro: {inputs[0]['name']}")
     print("  Escuchando...")
 
-    # Iniciar thread de procesamiento
     processor = threading.Thread(target=process_audio, daemon=True)
     processor.start()
 
-    # Stream de audio
-    with sd.InputStream(
-        samplerate=SAMPLE_RATE,
-        channels=1,
-        callback=audio_callback,
-        blocksize=porcupine.frame_length,
-    ):
+    with sd.InputStream(samplerate=SAMPLE_RATE, channels=1, callback=audio_callback, blocksize=CHUNK_SIZE):
         try:
             while True:
                 time.sleep(0.1)
         except KeyboardInterrupt:
             print("\nJarvis Wake detenido.")
-
-    porcupine.delete()
 
 
 if __name__ == "__main__":
