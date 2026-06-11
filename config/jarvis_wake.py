@@ -87,7 +87,7 @@ def transcribe(audio_wav: bytes) -> str:
 
 
 def speak(text: str):
-    """TTS via Windows SAPI (gratuito, offline)."""
+    """TTS via Windows SAPI (gratuito, offline, sincrono)."""
     try:
         safe = text.replace("'", "''")
         subprocess.run(
@@ -97,7 +97,7 @@ def speak(text: str):
                 f"$s = New-Object System.Speech.Synthesis.SpeechSynthesizer; "
                 f"$s.Speak('{safe}')",
             ],
-            capture_output=True, timeout=30,
+            capture_output=True, timeout=60,
         )
     except Exception:
         pass
@@ -210,10 +210,16 @@ def process_audio():
                 response = query_hermes(text)
                 print(f"   Jarvis: {response}", flush=True)
                 if response and response != "(sin respuesta)":
-                    threading.Thread(target=speak, args=(response,), daemon=True).start()
+                    speak(response)  # sincrono: espera a que termine de hablar
 
-            print("   Escuchando... (cooldown 2s)", flush=True)
-            time.sleep(2)  # evitar que el micro capte la respuesta TTS
+                # Descartar audio residual del parlante (evita feedback loop)
+                drain_start = time.time()
+                while time.time() - drain_start < 1.0:
+                    try:
+                        audio_queue.get(timeout=0.1)
+                    except queue.Empty:
+                        break
+                print("   Escuchando...", flush=True)
 
 
 def main():
