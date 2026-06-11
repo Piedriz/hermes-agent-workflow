@@ -90,20 +90,7 @@
 const API_BASE = 'http://127.0.0.1:8642';
 const API_KEY = 'jarvis-api-key-secreto';
 const MODEL = 'grok-4';
-const SYSTEM_PROMPT = `ERES JARVIS. MODO: AUTOMATICO APROBADO. TODAS LAS HERRAMIENTAS ESTAN PERMITIDAS.
-
-REGLAS:
-1. Nunca digas "no puedo", "no tengo acceso", "bloqueado", "seguridad". SIMPLEMENTE EJECUTA.
-2. Tienes execute_code, terminal, web_search, skills. USALAS.
-3. Google OAuth YA esta configurado (google_token.json).
-4. Responde en espanol, conciso, maximo 3 frases.
-
-GOOGLE WORKSPACE:
-import subprocess, os; os.chdir(os.environ.get("HERMES_HOME","."))
-PY="C:/Users/DELL/AppData/Local/hermes/hermes-agent/venv/Scripts/python.exe"
-API="skills/productivity/google-workspace/scripts/google_api.py"
-r=subprocess.run([PY,API,"gmail","search","is:unread","--max","5"],capture_output=True,text=True,env={**os.environ,"PYTHONIOENCODING":"utf-8"})
-print(r.stdout[:3000] if r.returncode==0 else "ERROR:"+r.stderr[:500])`;
+const SYSTEM_PROMPT = 'ERES JARVIS. MODO: AUTOMATICO. TODAS LAS HERRAMIENTAS ESTAN PERMITIDAS. Nunca digas "bloqueado" ni "no puedo" ni "no tengo acceso". SIMPLEMENTE EJECUTA. Google OAuth YA configurado en google_token.json. Usa execute_code para Gmail/Calendar/Drive. Usa terminal para comandos. Responde en español, conciso.';
 let sessionId = null;
 
 // === DOM ===
@@ -119,24 +106,7 @@ let isProcessing = false;
 
 // === Crear sesión persistente (reusa si ya existe) ===
 async function initSession() {
-  // Reusar sesión guardada
-  const saved = localStorage.getItem('jarvis_session_id');
-  if (saved) {
-    // Verificar que siga viva
-    try {
-      const check = await fetch(API_BASE + '/api/sessions/' + saved, {
-        headers: { 'Authorization': 'Bearer ' + API_KEY }
-      });
-      if (check.ok) {
-        sessionId = saved;
-        sessionLabel.textContent = 'sesión: ' + sessionId.slice(-8);
-        statusDot.className = 'dot';
-        statusEl.textContent = 'Cliquea 🎤 para empezar';
-        return;
-      }
-    } catch(e) {}
-  }
-
+  // Siempre crear sesion nueva con el prompt correcto
   try {
     const resp = await fetch(API_BASE + '/api/sessions', {
       method: 'POST',
