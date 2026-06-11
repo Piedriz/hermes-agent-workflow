@@ -2,12 +2,13 @@
 # Jarvis Agent — docker-compose.yml
 #
 # Servicios (todos desde la misma imagen):
-#   :18789 → Gateway (cron, webhooks, mensajeria)
-#   :8642  → API OpenAI-compatible (Lucidbot)
-#   :9119  → Dashboard web (chat, sesiones, config)
+#   gateway (:18789, :8642) — Cron, API server
+#   dashboard (:9119)       — Panel de gestion Hermes
+#   tools (:8646)            — Tools server (hermes chat -q)
+#   web (:8080)              — Dashboard HTML personalizado
 #
 # Local:   docker compose up -d --build
-# Railway: railway up
+# Railway: railway up (detecta docker-compose.yml automaticamente)
 # =============================================================================
 
 services:
@@ -24,9 +25,13 @@ services:
     environment:
       - XAI_API_KEY=${XAI_API_KEY}
       - VOICE_TOOLS_OPENAI_KEY=${VOICE_TOOLS_OPENAI_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - TAVILY_API_KEY=${TAVILY_API_KEY}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
       - API_SERVER_ENABLED=true
       - API_SERVER_KEY=${API_SERVER_KEY:-jarvis-api-key-secreto}
       - API_SERVER_HOST=0.0.0.0
+      - HERMES_HOME=/opt/data
     command: ["gateway", "run"]
 
   dashboard:
@@ -42,7 +47,41 @@ services:
       - jarvis_data:/opt/data
     environment:
       - XAI_API_KEY=${XAI_API_KEY}
+      - HERMES_HOME=/opt/data
     command: ["dashboard", "--host", "0.0.0.0", "--no-open"]
+
+  tools:
+    build: .
+    image: jarvis-agent
+    container_name: jarvis-tools
+    restart: unless-stopped
+    ports:
+      - "8646:8646"
+    depends_on:
+      - gateway
+    volumes:
+      - jarvis_data:/opt/data
+    environment:
+      - XAI_API_KEY=${XAI_API_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - TAVILY_API_KEY=${TAVILY_API_KEY}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      - HERMES_HOME=/opt/data
+      - TOOLS_PORT=8646
+    command: ["python3", "/opt/data/scripts/jarvis_tools.py"]
+
+  web:
+    build: .
+    image: jarvis-agent
+    container_name: jarvis-web
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    depends_on:
+      - tools
+    volumes:
+      - jarvis_data:/opt/data
+    command: ["python3", "-m", "http.server", "8080", "--directory", "/opt/data"]
 
 volumes:
   jarvis_data:

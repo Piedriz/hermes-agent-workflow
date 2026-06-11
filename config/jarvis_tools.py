@@ -13,14 +13,15 @@ import json, os, re, subprocess
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
 HERMES_HOME = os.environ.get("HERMES_HOME", os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
-HERMES_BIN = os.path.join(
-    os.environ.get("LOCALAPPDATA", os.path.expanduser("~")),
-    "hermes", "hermes-agent", "venv", "Scripts", "hermes.exe"
-)
-VENV_PYTHON = os.path.join(
-    os.environ.get("LOCALAPPDATA", os.path.expanduser("~")),
-    "hermes", "hermes-agent", "venv", "Scripts", "python.exe"
-)
+
+# Detectar plataforma para rutas de Python y Hermes
+if os.name == "nt":  # Windows
+    LOCALAPPDATA = os.environ.get("LOCALAPPDATA", os.path.expanduser("~"))
+    VENV_PYTHON = os.path.join(LOCALAPPDATA, "hermes", "hermes-agent", "venv", "Scripts", "python.exe")
+    HERMES_BIN = os.path.join(LOCALAPPDATA, "hermes", "hermes-agent", "venv", "Scripts", "hermes.exe")
+else:  # Linux / Docker
+    VENV_PYTHON = os.environ.get("VENV_PYTHON", "python3")
+    HERMES_BIN = os.environ.get("HERMES_CLI", "/opt/hermes/.venv/bin/hermes")
 SETUP_SCRIPT = os.path.join(HERMES_HOME, "skills", "productivity", "google-workspace", "scripts", "setup.py")
 TOKEN_FILE = os.path.join(HERMES_HOME, "google_token.json")
 

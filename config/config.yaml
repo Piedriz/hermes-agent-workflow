@@ -400,7 +400,7 @@ goals:
   max_turns: 20
 skills:
   external_dirs:
-    - C:\Users\DELL\Desktop\jarvis-agent\skills
+    - ${HERMES_HOME}/skills
   template_vars: true
   inline_shell: false
   inline_shell_timeout: 10
@@ -640,7 +640,7 @@ platforms:
     enabled: true
     extra:
       host: 0.0.0.0
-      key: jarvis-api-key-secreto
+      key: ${API_SERVER_KEY:-jarvis-api-key-secreto}
 lucidbot:
   api_url: https://panel.lucidbot.co/api
   access_token: ${LUCIDBOT_ACCESS_TOKEN}

@@ -91,10 +91,8 @@
 
 <script>
 // === CONFIG ===
-const API_BASE = 'http://127.0.0.1:8642';
-const API_KEY = 'jarvis-api-key-secreto';
-const MODEL = 'grok-4';
-const TOOLS_URL = 'http://127.0.0.1:8646';
+const IS_LOCAL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+const TOOLS_URL = IS_LOCAL ? 'http://127.0.0.1:8646' : '/tools';
 const SYSTEM_PROMPT = `ERES JARVIS. MODO AUTOMATICO. TODAS LAS HERRAMIENTAS PERMITIDAS.
 
 HERRAMIENTAS:
