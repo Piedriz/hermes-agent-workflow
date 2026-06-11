@@ -110,17 +110,33 @@ def query_hermes(text: str) -> str:
             capture_output=True, text=True, timeout=120,
             env={**os.environ, "HERMES_HOME": HERMES_HOME, "PYTHONIOENCODING": "utf-8"},
             cwd=HERMES_HOME,
+            encoding="utf-8",
         )
-        lines = r.stdout.split("\n")
-        resp = []
-        for line in lines:
-            clean = line.strip()
-            if not clean or "\x1b" in clean or "─" in clean:
+        output = r.stdout
+        # Extraer solo el texto de respuesta (despues del banner de Hermes)
+        in_box = False
+        lines = []
+        for line in output.split('\n'):
+            if '╭─' in line or '┌─' in line:
+                in_box = True
                 continue
-            if "Resume this session" in clean or "Session:" in clean:
-                break
-            resp.append(clean)
-        return " ".join(resp).strip() or "(sin respuesta)"
+            if '╰─' in line or '└─' in line:
+                in_box = False
+                continue
+            if not in_box:
+                continue
+            # Limpiar bordes y ANSI
+            clean = line.strip()
+            # Eliminar caracteres de borde
+            clean = clean.lstrip('│╭╰┌└╮╯ ')
+            clean = clean.strip()
+            # Eliminar secuencias ANSI
+            import re
+            clean = re.sub(r'\x1b\[[0-9;]*m', '', clean)
+            if clean and not clean.startswith('Query:') and not clean.startswith('Session:'):
+                lines.append(clean)
+        result = ' '.join(lines).strip()
+        return result if result else "(sin respuesta)"
     except subprocess.TimeoutExpired:
         return "(timeout)"
     except Exception as e:
