@@ -170,7 +170,9 @@ def process_audio():
                 print(f"   Jarvis ({time.time()-start_llm:.1f}s): {response}", flush=True)
 
                 if response and not response.startswith("("):
-                    speak(response)
+                    # TTS desactivado temporalmente (conflicto con sounddevice)
+                    print(f"   [TTS]: {response[:80]}...", flush=True)
+                    # speak(response)
 
                 # Drenar audio residual
                 drain = time.time()
