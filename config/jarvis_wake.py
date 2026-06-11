@@ -111,6 +111,9 @@ def process_audio():
         except queue.Empty:
             print("   [alive]", flush=True)
             continue
+        except Exception as e:
+            print(f"   [queue err: {e}]", flush=True)
+            continue
 
         try:
             audio_16k = (frame[:, 0] * 32767).astype(np.int16)
@@ -126,63 +129,66 @@ def process_audio():
         score = prediction.get("hey_jarvis", 0)
 
         if score >= WAKE_THRESHOLD:
-            print(f"\n   Activado (score: {score:.2f})", flush=True)
-            is_recording = True
-            recording_frames = list(audio_16k.tolist())
+            try:
+                print(f"\n   Activado (score: {score:.2f})", flush=True)
+                is_recording = True
+                recording_frames = list(audio_16k.tolist())
 
-            silence_start = None
-            while True:
-                frame = audio_queue.get()
-                samples = (frame[:, 0] * 32767).astype(np.int16)
-                recording_frames.extend(samples.tolist())
-                volume = np.abs(frame).mean()
-                now = time.time()
+                silence_start = None
+                while True:
+                    frame = audio_queue.get()
+                    samples = (frame[:, 0] * 32767).astype(np.int16)
+                    recording_frames.extend(samples.tolist())
+                    volume = np.abs(frame).mean()
+                    now = time.time()
 
-                if volume < SILENCE_THRESHOLD:
-                    if silence_start is None:
-                        silence_start = now
-                    elif now - silence_start > SILENCE_SECONDS:
-                        break
-                else:
-                    silence_start = None
+                    if volume < SILENCE_THRESHOLD:
+                        if silence_start is None:
+                            silence_start = now
+                        elif now - silence_start > SILENCE_SECONDS:
+                            break
+                    else:
+                        silence_start = None
 
-                if len(recording_frames) / SAMPLE_RATE > MAX_RECORD_SECS:
-                    break
-
-            is_recording = False
-
-            # WAV
-            audio_np = np.array(recording_frames, dtype=np.int16)
-            wav_buf = io.BytesIO()
-            with wave.open(wav_buf, "wb") as wf:
-                wf.setnchannels(1)
-                wf.setsampwidth(2)
-                wf.setframerate(SAMPLE_RATE)
-                wf.writeframes(audio_np.tobytes())
-
-            start_stt = time.time()
-            text = transcribe(wav_buf.getvalue())
-            print(f"   STT ({time.time()-start_stt:.1f}s): {text}", flush=True)
-
-            if text and not text.startswith("ERROR"):
-                start_llm = time.time()
-                response = query_hermes(text)
-                print(f"   Jarvis ({time.time()-start_llm:.1f}s): {response}", flush=True)
-
-                if response and not response.startswith("("):
-                    # TTS desactivado temporalmente (conflicto con sounddevice)
-                    print(f"   [TTS]: {response[:80]}...", flush=True)
-                    # speak(response)
-
-                # Drenar audio residual
-                drain = time.time()
-                while time.time() - drain < 0.5:
-                    try:
-                        audio_queue.get(timeout=0.1)
-                    except queue.Empty:
+                    if len(recording_frames) / SAMPLE_RATE > MAX_RECORD_SECS:
                         break
 
-            print("   Escuchando...", flush=True)
+                is_recording = False
+
+                # WAV
+                audio_np = np.array(recording_frames, dtype=np.int16)
+                wav_buf = io.BytesIO()
+                with wave.open(wav_buf, "wb") as wf:
+                    wf.setnchannels(1)
+                    wf.setsampwidth(2)
+                    wf.setframerate(SAMPLE_RATE)
+                    wf.writeframes(audio_np.tobytes())
+
+                start_stt = time.time()
+                text = transcribe(wav_buf.getvalue())
+                print(f"   STT ({time.time()-start_stt:.1f}s): {text}", flush=True)
+
+                if text and not text.startswith("ERROR"):
+                    start_llm = time.time()
+                    response = query_hermes(text)
+                    print(f"   Jarvis ({time.time()-start_llm:.1f}s): {response}", flush=True)
+
+                    if response and not response.startswith("("):
+                        print(f"   [TTS]: {response[:80]}...", flush=True)
+
+                    # Drenar audio residual
+                    drain = time.time()
+                    while time.time() - drain < 0.5:
+                        try:
+                            audio_queue.get(timeout=0.1)
+                        except queue.Empty:
+                            break
+
+                print("   Escuchando...", flush=True)
+            except Exception as e:
+                print(f"   [ERROR en interaccion: {e}]", flush=True)
+                is_recording = False
+                continue
 
 
 def main():
