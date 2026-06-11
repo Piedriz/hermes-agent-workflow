@@ -90,7 +90,7 @@
 const API_BASE = 'http://127.0.0.1:8642';
 const API_KEY = 'jarvis-api-key-secreto';
 const MODEL = 'openrouter/openai/gpt-4.1-mini';
-const SYSTEM_PROMPT = 'Eres Jarvis, un asistente personal. Responde siempre en español, conciso y amable. Tienes acceso a execute_code, terminal, skills y web_search. Google OAuth ya está configurado (google_token.json). Para Gmail/Calendar/Drive usa execute_code con subprocess y el Python del venv. NUNCA digas que no puedes o no tienes acceso. Recuerda TODO lo que el usuario te ha dicho en esta conversación.';
+const SYSTEM_PROMPT = 'Eres Jarvis. Tienes acceso a Gmail via execute_code. Google OAuth ya configurado. USA execute_code. NUNCA digas que no tienes acceso. Responde en español, conciso.';
 let sessionId = null;
 
 // === DOM ===
@@ -106,31 +106,7 @@ let isProcessing = false;
 
 // === Crear sesión persistente (reusa si ya existe) ===
 async function initSession() {
-  // Intentar reusar sesion guardada
-  const saved = localStorage.getItem('jarvis_session_id');
-  if (saved) {
-    try {
-      const check = await fetch(API_BASE + '/api/sessions/' + saved, {
-        headers: { 'Authorization': 'Bearer ' + API_KEY }
-      });
-      if (check.ok) {
-        const data = await check.json();
-        if (data.session && !data.session.ended_at) {
-          sessionId = saved;
-          sessionLabel.textContent = 'sesión: ' + sessionId.slice(-8);
-          statusDot.className = 'dot';
-          statusEl.textContent = 'Cliquea 🎤 para empezar';
-          // Cargar historial
-          loadHistory();
-          return;
-        }
-      }
-    } catch(e) {}
-    // Sesion vieja murio, limpiar
-    localStorage.removeItem('jarvis_session_id');
-  }
-
-  // Crear nueva sesion
+  // Siempre crear sesion nueva (evita prompts viejos de localStorage)
   try {
     const resp = await fetch(API_BASE + '/api/sessions', {
       method: 'POST',
@@ -149,24 +125,6 @@ async function initSession() {
     console.error('No se pudo crear sesión:', e);
     statusEl.textContent = 'Error de conexión con Jarvis';
   }
-}
-
-async function loadHistory() {
-  try {
-    const resp = await fetch(API_BASE + '/api/sessions/' + sessionId + '/messages', {
-      headers: { 'Authorization': 'Bearer ' + API_KEY }
-    });
-    if (resp.ok) {
-      const data = await resp.json();
-      if (data.data) {
-        chat.innerHTML = '<div class="msg jarvis">Hola, soy Jarvis. Haz clic en el micrófono (🎤) y dime algo.</div>';
-        for (const msg of data.data) {
-          if (msg.role === 'user') addMessage(msg.content, 'user');
-          else if (msg.role === 'assistant') addMessage(msg.content, 'jarvis');
-        }
-      }
-    }
-  } catch(e) {}
 }
 
 // === Chat con sesión persistente ===
