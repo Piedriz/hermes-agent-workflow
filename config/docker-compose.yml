@@ -15,10 +15,14 @@ services:
     command: >
       sh -c "
         if [ ! -f /opt/data/config.yaml ]; then
-          cp /opt/seed/* /opt/data/ 2>/dev/null || true;
+          cp -r /opt/seed/* /opt/data/ 2>/dev/null || true;
           echo 'init: config seeded';
         else
           echo 'init: config exists, skipping';
+        fi;
+        if [ ! -f /opt/data/.env ]; then
+          env | grep -E '^(XAI_|OPENAI_|TAVILY_|OPENROUTER_|API_SERVER_)' > /opt/data/.env;
+          echo 'init: .env created from environment';
         fi
       "
 
@@ -47,7 +51,7 @@ services:
       - API_SERVER_KEY=${API_SERVER_KEY:-jarvis-api-key-secreto}
       - HERMES_DASHBOARD=1
       - HERMES_HOME=/opt/data
-    command: /opt/hermes/.venv/bin/hermes gateway
+    command: gateway run
 
   tools:
     build: .

@@ -1,0 +1,81 @@
+{
+  "jobs": [
+    {
+      "id": "526e66f03160",
+      "name": "Morning Brief",
+      "prompt": "Revisa Gmail. Clasifica los correos sin responder: urgentes, importantes, baja prioridad. Presenta resumen con los 5 mas relevantes.",
+      "skills": [],
+      "skill": null,
+      "model": null,
+      "provider": null,
+      "base_url": null,
+      "script": null,
+      "no_agent": false,
+      "context_from": null,
+      "schedule": {
+        "kind": "cron",
+        "expr": "0 7 * * 1-5",
+        "display": "0 7 * * 1-5"
+      },
+      "schedule_display": "0 7 * * 1-5",
+      "repeat": {
+        "times": null,
+        "completed": 1
+      },
+      "enabled": true,
+      "state": "scheduled",
+      "paused_at": null,
+      "paused_reason": null,
+      "created_at": "2026-06-10T16:38:44.251342-05:00",
+      "next_run_at": "2026-06-12T07:00:00-05:00",
+      "last_run_at": "2026-06-11T08:06:21.341293-05:00",
+      "last_status": "ok",
+      "last_error": null,
+      "last_delivery_error": null,
+      "deliver": "local",
+      "origin": null,
+      "enabled_toolsets": null,
+      "workdir": null,
+      "profile": null
+    },
+    {
+      "id": "9d65a78fba54",
+      "name": "Procesar Drive",
+      "prompt": "Busca en Google Drive la carpeta Pendientes. Si hay archivos nuevos, extrae su contenido, resumelos y sugiere tareas. Mueve los archivos procesados a la carpeta Procesados.",
+      "skills": [],
+      "skill": null,
+      "model": null,
+      "provider": null,
+      "base_url": null,
+      "script": null,
+      "no_agent": false,
+      "context_from": null,
+      "schedule": {
+        "kind": "cron",
+        "expr": "0 9 * * 1-5",
+        "display": "0 9 * * 1-5"
+      },
+      "schedule_display": "0 9 * * 1-5",
+      "repeat": {
+        "times": null,
+        "completed": 1
+      },
+      "enabled": true,
+      "state": "scheduled",
+      "paused_at": null,
+      "paused_reason": null,
+      "created_at": "2026-06-10T16:38:49.396697-05:00",
+      "next_run_at": "2026-06-12T09:00:00-05:00",
+      "last_run_at": "2026-06-11T09:00:53.935310-05:00",
+      "last_status": "ok",
+      "last_error": null,
+      "last_delivery_error": null,
+      "deliver": "local",
+      "origin": null,
+      "enabled_toolsets": null,
+      "workdir": null,
+      "profile": null
+    }
+  ],
+  "updated_at": "2026-06-11T09:00:53.939602-05:00"
+}
