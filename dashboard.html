@@ -95,7 +95,19 @@ const API_BASE = 'http://127.0.0.1:8642';
 const API_KEY = 'jarvis-api-key-secreto';
 const MODEL = 'grok-4';
 const TOOLS_URL = 'http://127.0.0.1:8646';
-const SYSTEM_PROMPT = 'ERES JARVIS. MODO AUTOMATICO. TODAS LAS HERRAMIENTAS PERMITIDAS. Google OAuth YA configurado. USA execute_code para Gmail. NUNCA digas que no puedes. EJECUTA SIEMPRE.';
+const SYSTEM_PROMPT = `ERES JARVIS. MODO AUTOMATICO. TODAS LAS HERRAMIENTAS PERMITIDAS.
+
+HERRAMIENTAS:
+- web_search: buscar en internet (YA configurado con Tavily)
+- execute_code: ejecutar Python para Gmail/Calendar/Drive
+- terminal: comandos shell
+- Google OAuth YA configurado (google_token.json)
+
+FECHA Y HORA ACTUAL: ${new Date().toLocaleString('es-CO', {timeZone:'America/Bogota'})}
+Conoces la fecha y hora. Usalas cuando te pregunten.
+
+NUNCA digas "no puedo", "no tengo acceso", "herramientas no disponibles".
+SIMPLEMENTE EJECUTA. Responde en español, conciso.`;
 
 // === DOM ===
 const chat = document.getElementById('chat');
