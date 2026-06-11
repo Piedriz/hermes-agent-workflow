@@ -16,12 +16,14 @@ services:
       sh -c "
         if [ ! -f /opt/data/config.yaml ]; then
           cp -r /opt/seed/* /opt/data/ 2>/dev/null || true;
+          chown -R 10000:10000 /opt/data 2>/dev/null || true;
           echo 'init: config seeded';
         else
           echo 'init: config exists, skipping';
         fi;
         if [ ! -f /opt/data/.env ]; then
           env | grep -E '^(XAI_|OPENAI_|TAVILY_|OPENROUTER_|API_SERVER_)' > /opt/data/.env;
+          chown 10000:10000 /opt/data/.env 2>/dev/null || true;
           echo 'init: .env created from environment';
         fi
       "
