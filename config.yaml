@@ -600,6 +600,21 @@ platform_toolsets:
   - vision
   - web
   - x_search
+  api_server:
+  - browser
+  - clarify
+  - code_execution
+  - cronjob
+  - delegation
+  - file
+  - memory
+  - session_search
+  - skills
+  - terminal
+  - todo
+  - tts
+  - vision
+  - web
   telegram:
   - hermes-telegram
   discord:
