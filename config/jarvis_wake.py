@@ -30,11 +30,10 @@ CHUNK_SIZE = 1280
 SILENCE_THRESHOLD = 0.02
 SILENCE_SECONDS = 0.8
 MAX_RECORD_SECS = 10
-WAKE_THRESHOLD = 0.15
+WAKE_THRESHOLD = 0.25
 
 # === MOTORES (inicializados en main) ===
 whisper_model = None
-tts_engine = None
 model = None
 audio_queue = queue.Queue()
 is_recording = False
@@ -58,13 +57,19 @@ def transcribe(audio_wav: bytes) -> str:
 
 
 def speak(text: str):
-    """TTS local con pyttsx3."""
-    global tts_engine
-    try:
-        tts_engine.say(text)
-        tts_engine.runAndWait()
-    except Exception:
-        pass
+    """TTS local con pyttsx3 en hilo separado (evita bloqueos)."""
+    def _speak():
+        try:
+            import pyttsx3
+            engine = pyttsx3.init()
+            engine.setProperty("rate", 180)
+            engine.say(text)
+            engine.runAndWait()
+        except Exception:
+            pass
+    t = threading.Thread(target=_speak, daemon=True)
+    t.start()
+    t.join(timeout=15)  # no bloquear mas de 15s
 
 
 def query_hermes(text: str) -> str:
@@ -170,7 +175,7 @@ def process_audio():
 
 
 def main():
-    global model, whisper_model, tts_engine
+    global model, whisper_model
 
     import openwakeword
     openwakeword.utils.download_models()
@@ -187,11 +192,9 @@ def main():
     whisper_model = WhisperModel("base", device="cpu", compute_type="int8")
     print(f"  faster-whisper: {time.time()-t_start:.1f}s", flush=True)
 
-    t_start = time.time()
-    import pyttsx3
-    tts_engine = pyttsx3.init()
-    tts_engine.setProperty("rate", 180)
-    print(f"  pyttsx3: {time.time()-t_start:.1f}s", flush=True)
+    print("  faster-whisper loaded", flush=True)
+
+    print("  pyttsx3: se inicializa en cada llamada", flush=True)
 
     # === ARRANQUE ===
     print("=" * 50)
