@@ -1,0 +1,16 @@
+#!/bin/bash
+# gapi — Google API helper for Hermes terminal
+# Usage: gapi gmail search "is:unread" --max 10
+#        gapi calendar list
+#        gapi drive search "report" --max 5
+#
+# Este script esta en el PATH del agente para que pueda usar
+# google_api.py sin preocuparse por la ruta de Python.
+
+VENV_PYTHON="C:/Users/DELL/AppData/Local/hermes/hermes-agent/venv/Scripts/python.exe"
+SCRIPT="$(dirname "$(readlink -f "${BASH_SOURCE[0]}" 2>/dev/null || echo "${BASH_SOURCE[0]}")")/skills/productivity/google-workspace/scripts/google_api.py"
+
+export PYTHONIOENCODING=utf-8
+export HERMES_HOME="${HERMES_HOME:-$HOME/.hermes}"
+
+exec "$VENV_PYTHON" "$SCRIPT" "$@"

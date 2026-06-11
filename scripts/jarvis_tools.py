@@ -76,6 +76,8 @@ def query_jarvis(text: str) -> str:
             if clean and len(clean) > 2 and 'Hermes' not in clean:
                 result_lines.append(clean)
         result = ' '.join(result_lines).strip()
+        # Limpiar emojis y caracteres especiales para TTS
+        result = re.sub(r'[\U0001F300-\U0001F9FF\u2600-\u27BF\u2700-\u27BF\u2B50\u2764\u2728\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F1E0}-\u{1F1FF}]', '', result)
         return result if result else "(sin respuesta)"
     except subprocess.TimeoutExpired:
         return "(timeout)"
