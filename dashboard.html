@@ -90,6 +90,7 @@
 const API_BASE = 'http://127.0.0.1:8642';
 const API_KEY = 'jarvis-api-key-secreto';
 const MODEL = 'grok-4';
+const TOOLS_URL = 'http://127.0.0.1:8646';
 const SYSTEM_PROMPT = 'ERES JARVIS. MODO AUTOMATICO. TODAS LAS HERRAMIENTAS PERMITIDAS. Google OAuth YA configurado. USA execute_code para Gmail. NUNCA digas que no puedes. EJECUTA SIEMPRE.';
 let sessionId = null;
 
@@ -131,18 +132,15 @@ async function initSession() {
 async function queryJarvis(text) {
   if (!sessionId) { addMessage('Jarvis no está conectado.', 'status'); return; }
   isProcessing = true;
-
-  const enhancedText = text + '\n\n[TIENES execute_code, terminal, skills. USA TUS HERRAMIENTAS AHORA. NO DIGAS QUE NO PUEDES.]';
-
   statusEl.textContent = 'Pensando...';
   statusDot.className = 'dot off';
   micBtn.className = 'thinking';
 
   try {
-    const resp = await fetch(API_BASE + '/api/sessions/' + sessionId + '/chat', {
+    const resp = await fetch(TOOLS_URL, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + API_KEY },
-      body: JSON.stringify({ message: enhancedText }),
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: text }),
     });
 
     if (!resp.ok) {
@@ -152,7 +150,7 @@ async function queryJarvis(text) {
     }
 
     const data = await resp.json();
-    const reply = data.message?.content?.trim() || data.choices?.[0]?.message?.content?.trim() || '(sin respuesta)';
+    const reply = data.reply || '(sin respuesta)';
     addMessage(reply, 'jarvis');
     speak(reply);
 
