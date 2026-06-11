@@ -27,10 +27,10 @@ MODEL_NAME = os.environ.get("LLM_MODEL", "grok-4")
 
 SAMPLE_RATE = 16000
 CHUNK_SIZE = 1280
-SILENCE_THRESHOLD = 0.02
+SILENCE_THRESHOLD = 0.03
 SILENCE_SECONDS = 0.8
 MAX_RECORD_SECS = 10
-WAKE_THRESHOLD = 0.25
+WAKE_THRESHOLD = 0.5
 
 # === MOTORES (inicializados en main) ===
 whisper_model = None
@@ -106,13 +106,16 @@ def process_audio():
     global is_recording, recording_frames
 
     while True:
-        try:
-            frame = audio_queue.get(timeout=5)
-        except queue.Empty:
+        # Polling manual (queue.get con timeout falla en Windows)
+        frame = None
+        deadline = time.time() + 5
+        while frame is None and time.time() < deadline:
+            try:
+                frame = audio_queue.get(timeout=0.1)
+            except queue.Empty:
+                continue
+        if frame is None:
             print("   [alive]", flush=True)
-            continue
-        except Exception as e:
-            print(f"   [queue err: {e}]", flush=True)
             continue
 
         try:
