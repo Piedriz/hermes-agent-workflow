@@ -32,7 +32,7 @@ services:
       - API_SERVER_KEY=${API_SERVER_KEY:-jarvis-api-key-secreto}
       - API_SERVER_HOST=0.0.0.0
       - HERMES_HOME=/opt/data
-    command: ["gateway", "run"]
+    command: ["gateway"]
 
   dashboard:
     build: .
