@@ -203,7 +203,10 @@ Cambia los argumentos `'gmail', 'search', 'is:unread', '--max', '10'` según nec
 
 ```python
 [PY, API, 'calendar', 'list']
-[PY, API, 'calendar', 'create', '--summary', 'Reunión', '--start', '2026-06-11T10:00:00-05:00', '--end', '2026-06-11T11:00:00-05:00']
+[PY, API, 'calendar', 'create', '--summary', 'Reunion', '--start', '2026-06-11T10:00:00-05:00', '--end', '2026-06-11T11:00:00-05:00']
+[PY, API, 'calendar', 'create', '--summary', 'Reunion con Meet', '--start', '2026-06-11T12:00:00-05:00', '--end', '2026-06-11T12:30:00-05:00', '--conference', '--attendees', 'email@ejemplo.com']
+[PY, API, 'calendar', 'update', 'EVENT_ID', '--add-attendees', 'persona@ejemplo.com']
+[PY, API, 'calendar', 'update', 'EVENT_ID', '--conference']
 [PY, API, 'calendar', 'delete', 'EVENT_ID']
 ```
 

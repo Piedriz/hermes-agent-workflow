@@ -11,7 +11,8 @@ Usage:
   python google_api.py gmail send --to user@example.com --subject "Hi" --body "Hello"
   python google_api.py gmail reply MESSAGE_ID --body "Thanks"
   python google_api.py calendar list [--from DATE] [--to DATE] [--calendar primary]
-  python google_api.py calendar create --summary "Meeting" --start DATETIME --end DATETIME
+  python google_api.py calendar create --summary "Meeting" --start DATETIME --end DATETIME [--conference] [--attendees emails]
+  python google_api.py calendar update EVENT_ID [--add-attendees emails] [--conference]
   python google_api.py drive search "budget report" [--max 10]
   python google_api.py contacts list [--max 20]
   python google_api.py sheets get SHEET_ID RANGE
@@ -24,6 +25,7 @@ import argparse
 import base64
 import json
 import os
+import random
 import shutil
 import subprocess
 import sys
@@ -528,29 +530,90 @@ def calendar_create(args):
     if args.attendees:
         event["attendees"] = [{"email": e.strip()} for e in args.attendees.split(",") if e.strip()]
 
+    # Google Meet conference
+    conference = getattr(args, "conference", False)
+    if conference:
+        event["conferenceData"] = {
+            "createRequest": {
+                "requestId": str(random.randint(100000, 999999)),
+                "conferenceSolutionKey": {"type": "hangoutsMeet"}
+            }
+        }
+
     if _gws_binary():
         result = _run_gws(
             ["calendar", "events", "insert"],
-            params={"calendarId": args.calendar},
+            params={"calendarId": args.calendar, "conferenceDataVersion": "1" if conference else "0"},
             body=event,
         )
-        print(json.dumps({
+        out = {
             "status": "created",
             "id": result["id"],
             "summary": result.get("summary", ""),
             "htmlLink": result.get("htmlLink", ""),
-        }, indent=2))
+        }
+        if conference:
+            out["hangoutLink"] = result.get("hangoutLink", "")
+            out["meetLink"] = (result.get("conferenceData", {}) or {}).get("entryPoints", [{}])[0].get("uri", "")
+        print(json.dumps(out, indent=2))
         return
 
     service = build_service("calendar", "v3")
-    result = service.events().insert(calendarId=args.calendar, body=event).execute()
-    print(json.dumps({
+    params = {"calendarId": args.calendar}
+    if conference:
+        params["conferenceDataVersion"] = 1
+    result = service.events().insert(calendarId=args.calendar, body=event, conferenceDataVersion=1 if conference else 0).execute()
+    out = {
         "status": "created",
         "id": result["id"],
         "summary": result.get("summary", ""),
         "htmlLink": result.get("htmlLink", ""),
-    }, indent=2))
+    }
+    if conference:
+        out["hangoutLink"] = result.get("hangoutLink", "")
+        out["meetLink"] = (result.get("conferenceData", {}) or {}).get("entryPoints", [{}])[0].get("uri", "")
+    print(json.dumps(out, indent=2))
 
+
+def calendar_update(args):
+    """Modifica un evento existente: añade asistentes, conferencia, etc."""
+    event_id = args.event_id
+    body = {}
+    if args.add_attendees:
+        body["attendees"] = [{"email": e.strip()} for e in args.add_attendees.split(",") if e.strip()]
+    if getattr(args, "conference", False):
+        body["conferenceData"] = {
+            "createRequest": {
+                "requestId": str(random.randint(100000, 999999)),
+                "conferenceSolutionKey": {"type": "hangoutsMeet"}
+            }
+        }
+
+    if not body:
+        print(json.dumps({"error": "No changes specified. Use --add-attendees or --conference"}))
+        return
+
+    if _gws_binary():
+        result = _run_gws(
+            ["calendar", "events", "patch"],
+            params={"calendarId": args.calendar, "eventId": event_id,
+                    "conferenceDataVersion": "1" if getattr(args, "conference", False) else "0",
+                    "sendUpdates": "all"},
+            body=body,
+        )
+        out = json.dumps({"status": "updated", "id": result["id"], "htmlLink": result.get("htmlLink", "")})
+        print(out)
+        return
+
+    service = build_service("calendar", "v3")
+    params = {"calendarId": args.calendar, "eventId": event_id, "sendUpdates": "all"}
+    if getattr(args, "conference", False):
+        params["conferenceDataVersion"] = 1
+    result = service.events().patch(**params, body=body).execute()
+    out = {"status": "updated", "id": result["id"], "htmlLink": result.get("htmlLink", "")}
+    if result.get("hangoutLink"):
+        out["hangoutLink"] = result["hangoutLink"]
+    print(json.dumps(out, indent=2))
 
 
 def calendar_delete(args):
@@ -1111,8 +1174,16 @@ def main():
     p.add_argument("--location", default="")
     p.add_argument("--description", default="")
     p.add_argument("--attendees", default="", help="Comma-separated email addresses")
+    p.add_argument("--conference", action="store_true", help="Add Google Meet conference")
     p.add_argument("--calendar", default="primary")
     p.set_defaults(func=calendar_create)
+
+    p = cal_sub.add_parser("update")
+    p.add_argument("event_id")
+    p.add_argument("--add-attendees", default="", help="Comma-separated emails to add")
+    p.add_argument("--conference", action="store_true", help="Add Google Meet conference")
+    p.add_argument("--calendar", default="primary")
+    p.set_defaults(func=calendar_update)
 
     p = cal_sub.add_parser("delete")
     p.add_argument("event_id")
