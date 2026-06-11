@@ -47,7 +47,7 @@ services:
       - API_SERVER_KEY=${API_SERVER_KEY:-jarvis-api-key-secreto}
       - HERMES_DASHBOARD=1
       - HERMES_HOME=/opt/data
-    command: ["gateway", "run"]
+    command: /opt/hermes/.venv/bin/hermes gateway
 
   tools:
     build: .
