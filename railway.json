@@ -6,7 +6,6 @@
   },
   "deploy": {
     "numReplicas": 1,
-    "healthcheckPath": "/v1/models",
     "restartPolicyMaxRetries": 3
   }
 }

@@ -18,8 +18,8 @@ services:
     container_name: jarvis-gateway
     restart: unless-stopped
     ports:
-      - "18789:18789"
       - "8642:8642"
+      - "18789:18789"
     volumes:
       - jarvis_data:/opt/data
     environment:
