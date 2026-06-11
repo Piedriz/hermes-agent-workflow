@@ -89,8 +89,8 @@
 // === CONFIG ===
 const API_BASE = 'http://127.0.0.1:8642';
 const API_KEY = 'jarvis-api-key-secreto';
-const MODEL = 'grok-4';
-const SYSTEM_PROMPT = 'ERES JARVIS. MODO: AUTOMATICO. TODAS LAS HERRAMIENTAS ESTAN PERMITIDAS. Nunca digas "bloqueado" ni "no puedo" ni "no tengo acceso". SIMPLEMENTE EJECUTA. Google OAuth YA configurado en google_token.json. Usa execute_code para Gmail/Calendar/Drive. Usa terminal para comandos. Responde en español, conciso.';
+const MODEL = 'openrouter/openai/gpt-4.1-mini';
+const SYSTEM_PROMPT = 'Eres Jarvis, un asistente personal. Responde siempre en español, conciso y amable. Tienes acceso a execute_code, terminal, skills y web_search. Google OAuth ya está configurado (google_token.json). Para Gmail/Calendar/Drive usa execute_code con subprocess y el Python del venv. NUNCA digas que no puedes o no tienes acceso. Recuerda TODO lo que el usuario te ha dicho en esta conversación.';
 let sessionId = null;
 
 // === DOM ===
@@ -106,7 +106,31 @@ let isProcessing = false;
 
 // === Crear sesión persistente (reusa si ya existe) ===
 async function initSession() {
-  // Siempre crear sesion nueva con el prompt correcto
+  // Intentar reusar sesion guardada
+  const saved = localStorage.getItem('jarvis_session_id');
+  if (saved) {
+    try {
+      const check = await fetch(API_BASE + '/api/sessions/' + saved, {
+        headers: { 'Authorization': 'Bearer ' + API_KEY }
+      });
+      if (check.ok) {
+        const data = await check.json();
+        if (data.session && !data.session.ended_at) {
+          sessionId = saved;
+          sessionLabel.textContent = 'sesión: ' + sessionId.slice(-8);
+          statusDot.className = 'dot';
+          statusEl.textContent = 'Cliquea 🎤 para empezar';
+          // Cargar historial
+          loadHistory();
+          return;
+        }
+      }
+    } catch(e) {}
+    // Sesion vieja murio, limpiar
+    localStorage.removeItem('jarvis_session_id');
+  }
+
+  // Crear nueva sesion
   try {
     const resp = await fetch(API_BASE + '/api/sessions', {
       method: 'POST',
@@ -120,8 +144,30 @@ async function initSession() {
       sessionLabel.textContent = 'sesión: ' + sessionId.slice(-8);
       statusDot.className = 'dot';
       statusEl.textContent = 'Cliquea 🎤 para empezar';
-      console.log('Sesión creada:', sessionId);
     }
+  } catch(e) {
+    console.error('No se pudo crear sesión:', e);
+    statusEl.textContent = 'Error de conexión con Jarvis';
+  }
+}
+
+async function loadHistory() {
+  try {
+    const resp = await fetch(API_BASE + '/api/sessions/' + sessionId + '/messages', {
+      headers: { 'Authorization': 'Bearer ' + API_KEY }
+    });
+    if (resp.ok) {
+      const data = await resp.json();
+      if (data.messages) {
+        chat.innerHTML = '<div class="msg jarvis">Hola, soy Jarvis. Haz clic en el micrófono (🎤) y dime algo.</div>';
+        for (const msg of data.messages) {
+          if (msg.role === 'user') addMessage(msg.content, 'user');
+          else if (msg.role === 'assistant') addMessage(msg.content, 'jarvis');
+        }
+      }
+    }
+  } catch(e) {}
+}
   } catch(e) {
     console.error('No se pudo crear sesión:', e);
     statusEl.textContent = 'Error de conexión con Jarvis';
@@ -133,8 +179,7 @@ async function queryJarvis(text) {
   if (!sessionId) { addMessage('Jarvis no está conectado. Recarga la página.', 'status'); return; }
   isProcessing = true;
 
-  // Inyectar instruccion de tools en cada mensaje
-  const enhancedText = text + '\n\n[USA TUS HERRAMIENTAS. TIENES execute_code. NO DIGAS QUE NO PUEDES.]';
+  const enhancedText = text;
 
   statusEl.textContent = 'Pensando...';
   statusDot.className = 'dot off';
