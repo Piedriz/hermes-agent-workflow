@@ -1,17 +1,27 @@
 # =============================================================================
 # Jarvis Agent — docker-compose.yml
 #
-# Servicios (todos desde la misma imagen):
-#   gateway (:18789, :8642) — Cron, API server
-#   dashboard (:9119)       — Panel de gestion Hermes
-#   tools (:8646)            — Tools server (hermes chat -q)
-#   web (:8080)              — Dashboard HTML personalizado
-#
-# Local:   docker compose up -d --build
 # Railway: railway up (detecta docker-compose.yml automaticamente)
+# Local:   docker compose up -d --build
 # =============================================================================
 
 services:
+  init:
+    build: .
+    image: jarvis-agent
+    container_name: jarvis-init
+    volumes:
+      - jarvis_data:/opt/data
+    command: >
+      sh -c "
+        if [ ! -f /opt/data/config.yaml ]; then
+          cp /opt/seed/* /opt/data/ 2>/dev/null || true;
+          echo 'init: config seeded';
+        else
+          echo 'init: config exists, skipping';
+        fi
+      "
+
   gateway:
     build: .
     image: jarvis-agent
@@ -20,6 +30,9 @@ services:
     ports:
       - "8642:8642"
       - "18789:18789"
+    depends_on:
+      init:
+        condition: service_completed_successfully
     volumes:
       - jarvis_data:/opt/data
     environment:
@@ -42,7 +55,8 @@ services:
     ports:
       - "9119:9119"
     depends_on:
-      - gateway
+      gateway:
+        condition: service_started
     volumes:
       - jarvis_data:/opt/data
     environment:
@@ -58,7 +72,8 @@ services:
     ports:
       - "8646:8646"
     depends_on:
-      - gateway
+      gateway:
+        condition: service_started
     volumes:
       - jarvis_data:/opt/data
     environment:
@@ -78,7 +93,8 @@ services:
     ports:
       - "8080:8080"
     depends_on:
-      - tools
+      tools:
+        condition: service_started
     command: ["python3", "-m", "http.server", "8080", "--directory", "/opt/data"]
 
 volumes:

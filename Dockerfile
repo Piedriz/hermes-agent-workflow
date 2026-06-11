@@ -6,6 +6,8 @@
 
 FROM nousresearch/hermes-agent:latest
 
+# Semilla para inicializar el volumen en Railway (no se pisa si el volumen ya tiene datos)
+COPY config/ /opt/seed/
 COPY config/ /opt/data/
 
 ENV HERMES_HOME=/opt/data
