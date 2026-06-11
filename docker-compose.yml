@@ -45,6 +45,7 @@ services:
       - API_SERVER_KEY=${API_SERVER_KEY:-jarvis-api-key-secreto}
       - API_SERVER_HOST=0.0.0.0
       - HERMES_HOME=/opt/data
+    entrypoint: ["/opt/hermes/.venv/bin/hermes"]
     command: ["gateway"]
 
   dashboard:
@@ -62,6 +63,7 @@ services:
     environment:
       - XAI_API_KEY=${XAI_API_KEY}
       - HERMES_HOME=/opt/data
+    entrypoint: ["/opt/hermes/.venv/bin/hermes"]
     command: ["dashboard", "--host", "0.0.0.0", "--no-open"]
 
   tools:
@@ -83,7 +85,8 @@ services:
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
       - HERMES_HOME=/opt/data
       - TOOLS_PORT=8646
-    command: ["python3", "/opt/data/scripts/jarvis_tools.py"]
+    entrypoint: ["python3"]
+    command: ["/opt/data/scripts/jarvis_tools.py"]
 
   web:
     build: .
