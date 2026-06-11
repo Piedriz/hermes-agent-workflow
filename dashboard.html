@@ -134,6 +134,9 @@ async function checkGoogleAccount() {
 async function googleLogout() {
   if (!confirm('Cerrar sesion de Google?')) return;
   await fetch(TOOLS_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{"action":"gmail_logout"}' });
+  addMessage('Cerraste sesion de Google. Ya no tengo acceso a Gmail/Calendar/Drive.', 'status');
+  // Avisar a Jarvis contextualmente
+  queryJarvis('[SISTEMA] El usuario cerro sesion de Google. Ya NO tengo acceso a Gmail, Calendar ni Drive. Olvida cualquier email que hayas leido antes.');
   checkGoogleAccount();
 }
 
@@ -152,11 +155,13 @@ async function googleAuthCode(code) {
   const resp = await fetch(TOOLS_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({action: 'gmail_code', code: code}) });
   const data = await resp.json();
   if (data.authenticated) {
-    checkGoogleAccount();
     addMessage('Google autenticado: ' + data.email, 'status');
+    // Avisar a Jarvis contextualmente
+    queryJarvis('[SISTEMA] El usuario inicio sesion de Google con la cuenta ' + data.email + '. Ya tengo acceso a Gmail, Calendar y Drive.');
   } else {
     addMessage('Error de autenticacion: ' + (data.error || 'desconocido'), 'status');
   }
+  checkGoogleAccount();
 }
 
 // === Crear sesión persistente ===
