@@ -69,15 +69,15 @@ def query_jarvis(text: str) -> str:
         result_lines = []
         for line in lines:
             # Saltar metadata y tool calls
-            if any(x in line for x in ['Query:', 'Initializing', 'Resume this session', 'Session:', 'Duration:', 'Messages:', 'Resumed session', '┊']):
+            if any(x in line for x in ['Query:', 'Initializing', 'Resume this session', 'Session:', 'Duration:', 'Messages:', 'Resumed session', '┊', '--resume']):
                 continue
             clean = re.sub(r'\x1b\[[0-9;]*m', '', line).strip()
             clean = clean.strip('\u2500\u2550\u2502\u2551\u256d\u256e\u256f\u2570\u250c\u2510\u2514\u2518 ╭╮╰╯│─┌┐└┘⚕↻🐍💻📚🔎📖')
             if clean and len(clean) > 2 and 'Hermes' not in clean:
                 result_lines.append(clean)
         result = ' '.join(result_lines).strip()
-        # Limpiar emojis y caracteres especiales para TTS
-        result = re.sub(r'[\U0001F300-\U0001F9FF\u2600-\u27BF\u2700-\u27BF\u2B50\u2764\u2728\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F1E0}-\u{1F1FF}]', '', result)
+        # Remover emojis y caracteres no imprimibles (mantiene ASCII + acentos español)
+        result = ''.join(c for c in result if ord(c) < 65536 and (ord(c) < 128 or c in 'áéíóúñÁÉÍÓÚÑüÜ'))
         return result if result else "(sin respuesta)"
     except subprocess.TimeoutExpired:
         return "(timeout)"
