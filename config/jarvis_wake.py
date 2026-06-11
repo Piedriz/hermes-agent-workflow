@@ -143,7 +143,7 @@ def process_audio():
             continue
 
         # Wake word detection
-        prediction = model.predict(audio_16k.tolist())
+        prediction = model.predict(audio_16k)
         score = prediction.get("hey_jarvis", 0)
 
         if score >= WAKE_THRESHOLD:
