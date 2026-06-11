@@ -106,14 +106,15 @@ def speak(text: str):
 def query_hermes(text: str) -> str:
     try:
         r = subprocess.run(
-            [HERMES_BIN, "chat", "-q", text, "--max-turns", "5"],
-            capture_output=True, text=True, timeout=120,
+            [HERMES_BIN, "chat", "-q", text, "--max-turns", "3"],
+            capture_output=True, text=True, timeout=60,
             env={**os.environ, "HERMES_HOME": HERMES_HOME, "PYTHONIOENCODING": "utf-8"},
             cwd=HERMES_HOME,
             encoding="utf-8",
+            stdin=subprocess.DEVNULL,
         )
         output = r.stdout
-        # Extraer solo el texto de respuesta (despues del banner de Hermes)
+        # Buscar la respuesta dentro de las lineas del box de Hermes
         in_box = False
         lines = []
         for line in output.split('\n'):
@@ -125,22 +126,17 @@ def query_hermes(text: str) -> str:
                 continue
             if not in_box:
                 continue
-            # Limpiar bordes y ANSI
-            clean = line.strip()
-            # Eliminar caracteres de borde
-            clean = clean.lstrip('│╭╰┌└╮╯ ')
-            clean = clean.strip()
-            # Eliminar secuencias ANSI
+            clean = line.strip().lstrip('│╭╰┌└╮╯ ').strip()
             import re
             clean = re.sub(r'\x1b\[[0-9;]*m', '', clean)
             if clean and not clean.startswith('Query:') and not clean.startswith('Session:'):
                 lines.append(clean)
         result = ' '.join(lines).strip()
+        if not result and r.stderr:
+            return f"(error: {r.stderr[:200]})"
         return result if result else "(sin respuesta)"
     except subprocess.TimeoutExpired:
-        return "(timeout)"
-    except Exception as e:
-        return f"(error: {e})"
+        return "(timeout - el agente tardo demasiado)"
 
 
 def audio_callback(indata, frames, time_info, status):
