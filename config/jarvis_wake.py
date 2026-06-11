@@ -106,8 +106,17 @@ def process_audio():
     global is_recording, recording_frames
 
     while True:
-        frame = audio_queue.get()
-        audio_16k = (frame[:, 0] * 32767).astype(np.int16)
+        try:
+            frame = audio_queue.get(timeout=5)
+        except queue.Empty:
+            print("   [alive]", flush=True)
+            continue
+
+        try:
+            audio_16k = (frame[:, 0] * 32767).astype(np.int16)
+        except Exception as e:
+            print(f"   [audio err: {e}]", flush=True)
+            continue
 
         if is_recording:
             recording_frames.extend(audio_16k.tolist())
