@@ -106,7 +106,7 @@ def speak(text: str):
 def query_hermes(text: str) -> str:
     try:
         r = subprocess.run(
-            [HERMES_BIN, "chat", "-q", text, "--max-turns", "5", "--continue", "jarvis-voice"],
+            [HERMES_BIN, "chat", "-q", text, "--max-turns", "5"],
             capture_output=True, text=True, timeout=120,
             env={**os.environ, "HERMES_HOME": HERMES_HOME, "PYTHONIOENCODING": "utf-8"},
             cwd=HERMES_HOME,
@@ -200,7 +200,8 @@ def process_audio():
                 if response and response != "(sin respuesta)":
                     threading.Thread(target=speak, args=(response,), daemon=True).start()
 
-            print("   Escuchando...", flush=True)
+            print("   Escuchando... (cooldown 2s)", flush=True)
+            time.sleep(2)  # evitar que el micro capte la respuesta TTS
 
 
 def main():
