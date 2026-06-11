@@ -79,8 +79,6 @@ services:
       - "8080:8080"
     depends_on:
       - tools
-    volumes:
-      - jarvis_data:/opt/data
     command: ["python3", "-m", "http.server", "8080", "--directory", "/opt/data"]
 
 volumes:
