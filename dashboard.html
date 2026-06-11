@@ -158,9 +158,9 @@ async function loadHistory() {
     });
     if (resp.ok) {
       const data = await resp.json();
-      if (data.messages) {
+      if (data.data) {
         chat.innerHTML = '<div class="msg jarvis">Hola, soy Jarvis. Haz clic en el micrófono (🎤) y dime algo.</div>';
-        for (const msg of data.messages) {
+        for (const msg of data.data) {
           if (msg.role === 'user') addMessage(msg.content, 'user');
           else if (msg.role === 'assistant') addMessage(msg.content, 'jarvis');
         }
