@@ -53,7 +53,7 @@ CHUNK_SIZE = 1280  # 80ms at 16kHz
 SILENCE_THRESHOLD = 0.02
 SILENCE_SECONDS = 1.5
 MAX_RECORD_SECS = 10
-WAKE_THRESHOLD = 0.3  # mas sensible
+WAKE_THRESHOLD = 0.15  # sin normalizacion, puntuaciones mas bajas
 
 model = None
 audio_queue = queue.Queue()
@@ -152,17 +152,13 @@ def process_audio():
 
     while True:
         frame = audio_queue.get()
-        # Normalizar audio bajo (microfono con poco gain)
-        peak = np.max(np.abs(frame))
-        if peak > 0.001:
-            frame = frame / peak
         audio_16k = (frame[:, 0] * 32767).astype(np.int16)
 
         if is_recording:
             recording_frames.extend(audio_16k.tolist())
             continue
 
-        # Wake word detection
+        # Wake word detection (sin normalizar, el modelo espera audio crudo)
         prediction = model.predict(audio_16k)
         score = prediction.get("hey_jarvis", 0)
 
